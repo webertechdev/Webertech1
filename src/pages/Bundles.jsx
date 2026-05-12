@@ -133,7 +133,6 @@ export default function Bundles() {
   return (
     <>
       <Toaster position="top-center" />
-      {/* Navigation - FIXED */}
       <nav className="bg-white shadow-md fixed w-full z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -171,7 +170,6 @@ export default function Bundles() {
                   </button>
                 )}
               </div>
-            </div>
             <div className="md:hidden flex items-center">
               <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-600 hover:text-primary">
                 {mobileMenuOpen ? <FaTimes className="text-xl" /> : <FaBars className="text-xl" />}
@@ -181,7 +179,6 @@ export default function Bundles() {
         </div>
       </nav>
 
-      {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-white shadow-lg fixed w-full z-10 top-16">
           <div className="px-2 pt-2 pb-3 space-y-1">
@@ -214,7 +211,6 @@ export default function Bundles() {
         </div>
       )}
 
-      {/* Auth Modal */}
       {authModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
           <div className="bg-white rounded-lg w-11/12 max-w-md p-8 relative">
@@ -265,9 +261,90 @@ export default function Bundles() {
         </div>
       )}
 
-      {/* Google Signup Modal */}
       {googleModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
           <div className="bg-white rounded-lg w-11/12 max-w-md p-8 relative">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text
+              <h2 className="text-2xl font-bold text-gray-900">Complete Your Registration</h2>
+              <button onClick={() => setGoogleModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                <FaTimes className="text-xl" />
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">We need additional information to complete your registration.</p>
+            <input type="tel" placeholder="Phone Number" className="w-full p-3 border rounded-md mb-4 focus:ring-2 focus:ring-primary" />
+            <button onClick={completeGoogleSignup} className="w-full py-3 bg-primary text-white rounded-md font-semibold hover:bg-secondary">Verify & Continue</button>
+          </div>
+        </div>
+      )}
+
+      <div className="pt-16">
+        {activeTab === 'home' && (
+          <>
+            <div className="relative bg-gradient-to-r from-primary to-secondary text-white">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                  <div>
+                    <h1 className="text-4xl md:text-5xl font-bold leading-tight">Get Your Digital Bundles Instantly!</h1>
+                    <p className="mt-4 text-lg opacity-90">Safaricom Data, Minutes & SMS bundles delivered in seconds. No waiting, no hassle.</p>
+                    <div className="mt-8 flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                      <button onClick={() => setActiveTab('buy-data')} className="bg-white text-primary font-semibold px-8 py-3 rounded-lg hover:bg-gray-100 transition duration-300">Buy Data Now</button>
+                      <button onClick={() => setActiveTab('buy-minutes')} className="border-2 border-white text-white font-semibold px-8 py-3 rounded-lg hover:bg-white hover:text-primary transition duration-300">Buy Minutes</button>
+                      <button onClick={() => setActiveTab('buy-sms')} className="border-2 border-white text-white font-semibold px-8 py-3 rounded-lg hover:bg-white hover:text-primary transition duration-300">Buy SMS</button>
+                    </div>
+                  </div>
+                  <div className="flex justify-center">
+                    <div className="relative">
+                      <div className="w-64 h-64 bg-white bg-opacity-20 rounded-full absolute -top-4 -left-4 animate-pulse"></div>
+                      <div className="w-64 h-64 bg-white bg-opacity-10 rounded-full absolute -bottom-4 -right-4 animate-pulse"></div>
+                      <div className="relative bg-white bg-opacity-20 backdrop-blur-sm rounded-2xl p-8 border border-white border-opacity-30">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="text-center">
+                            <div className="text-3xl font-bold">1GB</div>
+                            <div className="text-sm opacity-80">Data</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-bold">50</div>
+                            <div className="text-sm opacity-80">Minutes</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-bold">200</div>
+                            <div className="text-sm opacity-80">SMS</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="py-16 bg-white">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="text-center">
+                  <h2 className="text-3xl font-bold text-gray-900">Why Choose Webertech Bingwa?</h2>
+                  <p className="mt-4 text-lg text-gray-600 max-w-3xl mx-auto">Experience seamless digital bundle purchasing with our automated platform</p>
+                </div>
+                <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8">
+                  <div className="text-center p-6 rounded-xl hover:shadow-lg transition duration-300">
+                    <div className="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                      <FaBolt className="text-primary text-2xl" />
+                    </div>
+                    <h3 className="mt-4 text-xl font-semibold text-gray-900">Instant Delivery</h3>
+                    <p className="mt-2 text-gray-600">Receive your bundles within seconds of payment confirmation</p>
+                  </div>
+                  <div className="text-center p-6 rounded-xl hover:shadow-lg transition duration-300">
+                    <div className="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                      <FaLock className="text-primary text-2xl" />
+                    </div>
+                    <h3 className="mt-4 text-xl font-semibold text-gray-900">Secure Payments</h3>
+                    <p className="mt-2 text-gray-600">M-PESA STK Push with end-to-end encryption and security</p>
+                  </div>
+                  <div className="text-center p-6 rounded-xl hover:shadow-lg transition duration-300">
+                    <div className="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                      <FaHeadset className="text-primary text-2xl" />
+                    </div>
+                    <h3 className="mt-4 text-xl font-semibold text-gray-900">24/7 Support</h3>
+                    <p className="mt-2 text-gray-600">Round-the-clock customer support for all your queries</p>
+                  </div>
+                </div>
+              </div>
+    
