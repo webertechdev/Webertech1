@@ -7,6 +7,7 @@ import Academy from "./pages/Academy";
 import Electronics from "./pages/Electronics";
 import Bundles from "./pages/Bundles";
 import Dev from "./pages/Dev";
+import NotFound from "./pages/NotFound";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/electronics" element={<Electronics />} />
         <Route path="/bundles" element={<Bundles />} />
         <Route path="/dev" element={<Dev />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>
   );
