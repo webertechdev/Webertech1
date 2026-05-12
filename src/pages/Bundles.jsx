@@ -17,13 +17,11 @@ export default function Bundles() {
       toast.error("Weka namba ya Safaricom: 07XXXXXXXX");
       return;
     }
-    
     setLoading(true);
     toast.loading(`Sending KES ${price} STK to ${phone}...`);
-    
     setTimeout(() => {
       setLoading(false);
-      toast.success(`${bundle} Bundle sent! Check M-PESA`);
+      toast.success(`${bundle} sent! Check M-PESA`);
     }, 3000);
   };
 
@@ -33,7 +31,7 @@ export default function Bundles() {
       <div className="pt-24 pb-20 px-6 max-w-7xl mx-auto">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">Bingwa Sokoni Bundles</h1>
-          <p className="text-gray-600">Instant Safaricom Data, Minutes & SMS. Okoa Jahazi inafanya.</p>
+          <p className="text-gray-600">Instant Safaricom Data. Okoa Jahazi inafanya.</p>
         </div>
 
         <div className="max-w-md mx-auto mb-10">
@@ -46,13 +44,12 @@ export default function Bundles() {
           />
         </div>
 
-        <h2 className="text-2xl font-bold mb-6">Data Bundles</h2>
-        <div className="grid md:grid-cols-4 gap-6 mb-12">
+        <div className="grid md:grid-cols-4 gap-6">
           {dataBundles.map((b) => (
-            <div key={b.size} className="bg-white rounded-xl shadow-md p-6 text-center hover:shadow-xl transition">
+            <div key={b.size} className="bg-white rounded-xl shadow-md p-6 text-center">
               <div className="text-3xl font-bold text-green-600">{b.size}</div>
-              <div className="text-lg text-gray-900">{b.time}</div>
-              <div className="mt-2 text-gray-600">KES {b.price}</div>
+              <div className="text-lg">{b.time}</div>
+              <div className="mt-2">KES {b.price}</div>
               <button 
                 onClick={() => initiateStkPush(b.size, b.price)}
                 disabled={loading}
