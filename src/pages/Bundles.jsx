@@ -36,6 +36,7 @@ const faqs = [
   { q: "How long does it take to receive my bundle?", a: "Bundles are delivered instantly. You'll receive an M-PESA confirmation SMS within 10 seconds of payment." },
   { q: "What if I don't receive my bundle?", a: "Contact us immediately via WhatsApp +254 700 000 with your transaction ID. We resolve 99% of issues in under 5 minutes." },
   { q: "Can I buy bundles for another number?", a: "Yes! Just enter the recipient's Safaricom number in the 'Receiving Number' field. The bundle will be sent directly to them." },
+  { q: "What if I don't receive my bundle?", a: "Contact us immediately via WhatsApp +254722508904 with your transaction ID. We resolve 99% of issues in under 5 minutes." },
 ];
 
 export default function Bundles() {
@@ -512,12 +513,20 @@ export default function Bundles() {
                 </div>
                 <div className="bg-white p-6 rounded-lg shadow text-center">
                   <h3 className="font-semibold mb-2">Phone</h3>
-                  <p className="text-primary">+254 700 000 000</p>
+                  <p className="text-primary">+254 722 508 904</p>
                 </div>
                 <div className="bg-white p-6 rounded-lg shadow text-center">
                   <h3 className="font-semibold mb-2">WhatsApp</h3>
-                  <p className="text-primary">+254 700 000 000</p>
+                  <p className="text-primary">+254 722 508 904</p>
                 </div>
+                <div className="bg-white p-6 rounded-lg shadow text-center">
+                <h3 className="font-semibold mb-2">Phone</h3>
+                <p className="text-primary">+254722508904</p>
+              </div>
+              <div className="bg-white p-6 rounded-lg shadow text-center">
+                <h3 className="font-semibold mb-2">WhatsApp</h3>
+                <p className="text-primary">+254722508904</p>
+              </div>
               </div>
             </div>
           </div>
