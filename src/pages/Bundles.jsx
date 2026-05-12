@@ -143,6 +143,7 @@ export default function Bundles() {
                 </div>
                 <span className="ml-2 text-xl font-bold text-gray-900">Webertech Bingwa</span>
               </div>
+            </div>
             <div className="hidden md:flex items-center space-x-8">
               <button onClick={() => setActiveTab('home')} className="text-gray-600 hover:text-primary nav-link">Home</button>
               <button onClick={() => setActiveTab('buy-data')} className="text-gray-600 hover:text-primary nav-link">Buy Data</button>
