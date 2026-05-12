@@ -4,8 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
+        primary: '#10B981',    // Green ya Safaricom
+        secondary: '#059669',  // Dark green
+        dark: '#0F172A',
+        light: '#F8FAFC',
         webertech: {
-          blue: '#1e40af',
+          blue: '#1e40af',     // Ikiwa unaitumia mahali pengine
           green: '#10b981',
         }
       }
