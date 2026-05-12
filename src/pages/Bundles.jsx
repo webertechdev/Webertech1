@@ -169,6 +169,7 @@ export default function Bundles() {
                   </button>
                 )}
               </div>
+            </div>
             <div className="md:hidden flex items-center">
               <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-600 hover:text-primary">
                 {mobileMenuOpen ? <FaTimes className="text-xl" /> : <FaBars className="text-xl" />}
@@ -220,7 +221,7 @@ export default function Bundles() {
               </button>
             </div>
             <div className="mb-4">
-              <button onClick={() => setAuthTab('login')} className={`w-full py-3 mb-3 rounded-md font-semibold ${authTab === 'login' ? 'bg-primary text-white' : 'border border-primary text-primary'}`}>Login with Email</button>
+              <button onClick={() => setAuthTab('login')} className={`w-full py-3 mb-3 rounded-md font-semibold ${authTab === 'login' ? 'bg-primary text-white' : 'border border-primary text-primary'}`}>Login</button>
               <button onClick={() => setAuthTab('signup')} className={`w-full py-3 rounded-md font-semibold ${authTab === 'signup' ? 'bg-primary text-white' : 'border border-primary text-primary'}`}>Sign Up</button>
               <button onClick={googleSignIn} className="w-full py-3 mt-2 flex items-center justify-center border border-primary text-primary rounded-md font-semibold hover:bg-green-50">
                 <FaGoogle className="mr-2" /> Sign Up with Google
@@ -347,4 +348,180 @@ export default function Bundles() {
                 </div>
               </div>
             </div>
-        
+          </>
+        )}
+
+        {activeTab === 'buy-data' && (
+          <div className="py-16 bg-gray-50 min-h-screen">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="text-center mb-12">
+                <h1 className="text-4xl font-bold mb-4">Bingwa Sokoni Data Bundles</h1>
+                <p className="text-gray-600">Instant Safaricom Data. Okoa Jahazi inafanya.</p>
+              </div>
+              <div className="max-w-md mx-auto mb-10 space-y-4">
+                <input 
+                  type="tel" 
+                  placeholder="07XX XXX XXX - Namba ya Kupokea Bundle" 
+                  value={receivingNumber}
+                  onChange={(e) => setReceivingNumber(e.target.value)}
+                  className="w-full p-4 border rounded-lg text-center text-lg focus:ring-2 focus:ring-primary"
+                />
+                <input 
+                  type="tel" 
+                  placeholder="07XX XXX XXX - Namba ya M-PESA Kulipa" 
+                  value={mpesaNumber}
+                  onChange={(e) => setMpesaNumber(e.target.value)}
+                  className="w-full p-4 border rounded-lg text-center text-lg focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="grid md:grid-cols-4 gap-6">
+                {dataBundles.map((b) => (
+                  <BundleCard key={b.size} bundle={b} type="Data" />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'buy-minutes' && (
+          <div className="py-16 bg-gray-50 min-h-screen">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="text-center mb-12">
+                <h1 className="text-4xl font-bold mb-4">Bingwa Sokoni Minutes</h1>
+                <p className="text-gray-600">Ongea bila stress. Minutes pap!</p>
+              </div>
+              <div className="max-w-md mx-auto mb-10 space-y-4">
+                <input 
+                  type="tel" 
+                  placeholder="07XX XXX XXX - Namba ya Kupokea Minutes" 
+                  value={receivingNumber}
+                  onChange={(e) => setReceivingNumber(e.target.value)}
+                  className="w-full p-4 border rounded-lg text-center text-lg focus:ring-2 focus:ring-primary"
+                />
+                <input 
+                  type="tel" 
+                  placeholder="07XX XXX XXX - Namba ya M-PESA Kulipa" 
+                  value={mpesaNumber}
+                  onChange={(e) => setMpesaNumber(e.target.value)}
+                  className="w-full p-4 border rounded-lg text-center text-lg focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="grid md:grid-cols-4 gap-6">
+                {minutesBundles.map((b) => (
+                  <BundleCard key={b.size} bundle={b} type="Minutes" />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'buy-sms' && (
+          <div className="py-16 bg-gray-50 min-h-screen">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="text-center mb-12">
+                <h1 className="text-4xl font-bold mb-4">Bingwa Sokoni SMS</h1>
+                <p className="text-gray-600">SMS mob. Chat na wote.</p>
+              </div>
+              <div className="max-w-md mx-auto mb-10 space-y-4">
+                <input 
+                  type="tel" 
+                  placeholder="07XX XXX XXX - Namba ya Kupokea SMS" 
+                  value={receivingNumber}
+                  onChange={(e) => setReceivingNumber(e.target.value)}
+                  className="w-full p-4 border rounded-lg text-center text-lg focus:ring-2 focus:ring-primary"
+                />
+                <input 
+                  type="tel" 
+                  placeholder="07XX XXX XXX - Namba ya M-PESA Kulipa" 
+                  value={mpesaNumber}
+                  onChange={(e) => setMpesaNumber(e.target.value)}
+                  className="w-full p-4 border rounded-lg text-center text-lg focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="grid md:grid-cols-4 gap-6">
+                {smsBundles.map((b) => (
+                  <BundleCard key={b.size} bundle={b} type="SMS" />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'track-order' && (
+          <div className="pt-24 pb-20 px-6 max-w-4xl mx-auto min-h-screen">
+            <h1 className="text-3xl font-bold mb-6 text-center">Track Your Order</h1>
+            <input 
+              type="text" 
+              placeholder="Enter Transaction Reference e.g BINGWA_0001" 
+              value={txnId}
+              onChange={(e) => setTxnId(e.target.value)}
+              className="w-full p-4 border rounded-lg mb-4"
+            />
+            <button onClick={trackOrder} className="bg-primary text-white px-6 py-3 rounded-lg hover:bg-secondary">Track</button>
+            {txnResult && (
+              <div className="mt-6 bg-white p-6 rounded-lg shadow">
+                {txnResult.error ? (
+                  <p className="text-red-500">{txnResult.error}</p>
+                ) : (
+                  <>
+                    <p><strong>Transaction ID:</strong> {txnResult.id}</p>
+                    <p><strong>Status:</strong> <span className={txnResult.status === 'Completed' ? 'text-green-600' : 'text-yellow-600'}>{txnResult.status}</span></p>
+                    <p><strong>Amount:</strong> {txnResult.amount}</p>
+                    <p><strong>Date:</strong> {txnResult.date}</p>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="mt-12">
+              <h2 className="text-xl font-bold mb-4">Recent Transactions</h2>
+              {mockTransactions.map(t => (
+                <div key={t.id} className="bg-white p-4 rounded-lg shadow mb-3 flex justify-between">
+                  <div>
+                    <p className="font-semibold">{t.id}</p>
+                    <p className="text-sm text-gray-500">{t.date}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold">{t.amount}</p>
+                    <p className={t.status === 'Completed' ? 'text-green-600' : 'text-yellow-600'}>{t.status}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'support' && (
+          <div className="pt-24 pb-20 px-6 max-w-4xl mx-auto min-h-screen">
+            <h1 className="text-3xl font-bold mb-8 text-center">Support Center</h1>
+            <div className="mb-12">
+              <h2 className="text-2xl font-bold mb-6">Frequently Asked Questions</h2>
+              {faqs.map((faq, i) => (
+                <div key={i} className="bg-white rounded-lg shadow mb-4 p-6">
+                  <h3 className="font-semibold text-lg mb-2">{faq.q}</h3>
+                  <p className="text-gray-600">{faq.a}</p>
+                </div>
+              ))}
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold mb-6">Contact Us</h2>
+              <div className="grid md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-lg shadow text-center">
+                  <h3 className="font-semibold mb-2">Email</h3>
+                  <p className="text-primary">support@webertech.co.ke</p>
+                </div>
+                <div className="bg-white p-6 rounded-lg shadow text-center">
+                  <h3 className="font-semibold mb-2">Phone</h3>
+                  <p className="text-primary">+254 700 000 000</p>
+                </div>
+                <div className="bg-white p-6 rounded-lg shadow text-center">
+                  <h3 className="font-semibold mb-2">WhatsApp</h3>
+                  <p className="text-primary">+254 700 000 000</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
