@@ -18,7 +18,6 @@ import {
 } from "react-icons/fa";
 
 // ─── Firebase ──────────────────────────────────────────────────
-import { auth, db } from ".src/config/firebase";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
