@@ -3,12 +3,12 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAPw8j1HNlwl60IxudFK8_y7N7RJyBQV4U",
-  authDomain: "webertech1-bingwa.firebaseapp.com",
-  projectId: "webertech1-bingwa",
-  storageBucket: "webertech1-bingwa.firebasestorage.app",
-  messagingSenderId: "1039584358434",
-  appId: "1:1039584358434:web:11fc7b712419080b875a7b"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
