@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from "react";
 import { toast, Toaster } from "react-hot-toast";
-import { db, auth } from '.src/config/firebase'
+import { auth, db } from "../config/firebase";
 import {
   FaMobileAlt, FaBolt, FaHeadset,
   FaBars, FaTimes, FaUser, FaSignOutAlt,
