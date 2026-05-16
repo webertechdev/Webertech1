@@ -2,4 +2,9 @@
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
+{
+  "redirects": [
+    { "source": "/bundles", "destination": "https://bundles.webertech.co.ke", "permanent": true }
+  ]
+}
 }
