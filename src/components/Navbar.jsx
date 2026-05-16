@@ -18,7 +18,7 @@ export default function Navbar() {
           <Link to="/hustle" className="hover:text-blue-600">Hustle KE</Link>
           <Link to="/academy" className="hover:text-blue-600">Academy</Link>
           <Link to="/electronics" className="hover:text-blue-600">Electronics</Link>
-          <Link to="/bundles" className="hover:text-blue-600">Bundles</Link>
+          <a href="https://bundles.webertech.co.ke" className="hover:text-blue-600" rel="noopener noreferrer">Bundles</a>
           <Link to="/dev" className="hover:text-blue-600">Dev</Link>
         </div>
 
