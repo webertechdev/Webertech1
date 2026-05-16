@@ -18,7 +18,6 @@ export default function App() {
         <Route path="/hustle" element={<Hustle />} />
         <Route path="/academy" element={<Academy />} />
         <Route path="/electronics" element={<Electronics />} />
-        <Route path="/bundles" element={<Bundles />} />
         <Route path="/dev" element={<Dev />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
