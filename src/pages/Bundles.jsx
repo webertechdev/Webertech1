@@ -8,7 +8,6 @@
 
 import { useState, useEffect } from "react";
 import { toast, Toaster } from "react-hot-toast";
-import { auth, db } from "../config/firebase";
 import {
   FaMobileAlt, FaBolt, FaHeadset,
   FaBars, FaTimes, FaUser, FaSignOutAlt,
@@ -18,6 +17,8 @@ import {
 } from "react-icons/fa";
 
 // ─── Firebase ──────────────────────────────────────────────────
+import ChatWidget from "./ChatWidget";
+import { auth, db } from "../config/firebase";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -1118,6 +1119,9 @@ export default function Bundles() {
           <p>© {new Date().getFullYear()} WeberTech. All rights reserved. · support@webertech.co.ke · +254 722 508 904</p>
         </footer>
       </div>
+
+      {/* ── AI Support Chat — floats on every page ── */}
+      <ChatWidget />
     </>
   );
 }
