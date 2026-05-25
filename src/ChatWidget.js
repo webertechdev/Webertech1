@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────
-//  WeberTech — functions/src/supportChat.js
+//  WeberTech — functions/src/ChatWidget.js
 //  Firebase Function: AI Support Chat
 //  Uses OpenAI API (key stored in Firebase secret / env)
 //  Deploy: firebase deploy --only functions
