@@ -1,9 +1,4 @@
-// ─────────────────────────────────────────────────────────────────
-//  WeberTech — src/config/firebase.js
-//  Replace with your real values in Vercel > Settings > Env Variables
-//  NEVER hardcode keys here
-// ─────────────────────────────────────────────────────────────────
-
+// src/config/firebase.js
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth }                 from "firebase/auth";
 import { getFirestore }            from "firebase/firestore";
@@ -17,8 +12,9 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Prevent duplicate init on hot-reload
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const app = getApps().length === 0
+  ? initializeApp(firebaseConfig)
+  : getApps()[0];
 
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
