@@ -16,8 +16,7 @@ export default function NotFound() {
             This page doesn't exist. You might have mistyped the URL, or it may have moved.
           </p>
           <div style={{ display:"flex", gap:14, justifyContent:"center", flexWrap:"wrap" }}>
-            <Link to="/"
-              style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"13px 24px", background:"linear-gradient(135deg,#15803d,#16a34a)", borderRadius:11, color:"#fff", fontWeight:700, fontSize:15, textDecoration:"none" }}>
+            <Link to="/" style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"13px 24px", background:"linear-gradient(135deg,#15803d,#16a34a)", borderRadius:11, color:"#fff", fontWeight:700, fontSize:15, textDecoration:"none" }}>
               🏠 Go Home
             </Link>
             <a href="https://bundles.webertech.co.ke" target="_blank" rel="noreferrer"
