@@ -1,9 +1,9 @@
 // src/components/Footer.jsx
 import { Link } from "react-router-dom";
 
-const BUNDLES_URL = "https://bundles.webertech.co.ke";
-const WHATSAPP    = "https://wa.me/254722508904";
-const year        = new Date().getFullYear();
+const BUNDLES  = "https://bundles.webertech.co.ke";
+const WA       = "https://wa.me/254722508904";
+const YEAR     = new Date().getFullYear();
 
 export default function Footer() {
   return (
@@ -15,60 +15,33 @@ export default function Footer() {
           <div>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
               <div style={{ width:36, height:36, borderRadius:10, background:"linear-gradient(135deg,#15803d,#16a34a)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                <span style={{ color:"#fff", fontWeight:900, fontSize:16 }}>W</span>
+                <span style={{ color:"#fff", fontWeight:900, fontSize:17 }}>W</span>
               </div>
-              <span style={{ fontWeight:800, fontSize:18, color:"#fff" }}>
-                Weber<span style={{ color:"#4ade80" }}>Tech</span>
-              </span>
+              <span style={{ fontWeight:800, fontSize:18, color:"#fff" }}>Weber<span style={{ color:"#4ade80" }}>Tech</span></span>
             </div>
             <p style={{ fontSize:13.5, lineHeight:1.7, maxWidth:220, marginBottom:20 }}>
-              Kenya's digital services platform. Bundles, hosting, dev services & more — all via M-PESA.
+              Kenya's digital services platform. Bundles, dev, cyber, academy & more — all in one place.
             </p>
-            <div style={{ display:"flex", gap:10 }}>
-              {[
-                { href:WHATSAPP,                  label:"💬", title:"WhatsApp" },
-                { href:"mailto:support@webertech.co.ke", label:"✉", title:"Email"    },
-              ].map(s => (
-                <a key={s.title} href={s.href} target="_blank" rel="noreferrer" title={s.title}
-                  style={{ width:36, height:36, borderRadius:9, background:"rgba(255,255,255,0.08)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:17, textDecoration:"none" }}>
-                  {s.label}
-                </a>
-              ))}
-            </div>
+            <a href={WA} target="_blank" rel="noreferrer"
+              style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"9px 16px", background:"#25d366", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, textDecoration:"none" }}>
+              💬 WhatsApp Us
+            </a>
           </div>
 
           {/* Services */}
           <div>
             <h4 style={{ color:"#fff", fontWeight:700, fontSize:13, marginBottom:16, textTransform:"uppercase", letterSpacing:"0.6px" }}>Services</h4>
-            <a href={BUNDLES_URL} target="_blank" rel="noreferrer"
-              style={{ display:"block", color:"rgba(255,255,255,0.6)", textDecoration:"none", fontSize:13.5, marginBottom:10 }}>
-              ⚡ Safaricom Bundles
-            </a>
-            {[
-              { label:"Dev Services",   to:"/dev"         },
-              { label:"Cyber Services", to:"/cyber"       },
-              { label:"Electronics",    to:"/electronics" },
-              { label:"Academy",        to:"/academy"     },
-              { label:"Hustle",         to:"/hustle"      },
-            ].map(l => (
-              <Link key={l.to} to={l.to}
-                style={{ display:"block", color:"rgba(255,255,255,0.6)", textDecoration:"none", fontSize:13.5, marginBottom:10 }}>
-                {l.label}
-              </Link>
+            <a href={BUNDLES} target="_blank" rel="noreferrer" style={{ display:"block", color:"rgba(255,255,255,0.6)", textDecoration:"none", fontSize:13.5, marginBottom:10 }}>⚡ Safaricom Bundles</a>
+            {[["Dev Services","/dev"],["Cyber Services","/cyber"],["Electronics","/electronics"],["Academy","/academy"],["Hustle","/hustle"]].map(([l,t])=>(
+              <Link key={t} to={t} style={{ display:"block", color:"rgba(255,255,255,0.6)", textDecoration:"none", fontSize:13.5, marginBottom:10 }}>{l}</Link>
             ))}
           </div>
 
-          {/* Account */}
+          {/* Company */}
           <div>
-            <h4 style={{ color:"#fff", fontWeight:700, fontSize:13, marginBottom:16, textTransform:"uppercase", letterSpacing:"0.6px" }}>Account</h4>
-            {[
-              { label:"Dashboard", to:"/dashboard" },
-              { label:"Home",      to:"/"          },
-            ].map(l => (
-              <Link key={l.to} to={l.to}
-                style={{ display:"block", color:"rgba(255,255,255,0.6)", textDecoration:"none", fontSize:13.5, marginBottom:10 }}>
-                {l.label}
-              </Link>
+            <h4 style={{ color:"#fff", fontWeight:700, fontSize:13, marginBottom:16, textTransform:"uppercase", letterSpacing:"0.6px" }}>Company</h4>
+            {[["Home","/"],["Dashboard","/dashboard"]].map(([l,t])=>(
+              <Link key={t} to={t} style={{ display:"block", color:"rgba(255,255,255,0.6)", textDecoration:"none", fontSize:13.5, marginBottom:10 }}>{l}</Link>
             ))}
           </div>
 
@@ -77,16 +50,12 @@ export default function Footer() {
             <h4 style={{ color:"#fff", fontWeight:700, fontSize:13, marginBottom:16, textTransform:"uppercase", letterSpacing:"0.6px" }}>Contact</h4>
             <p style={{ fontSize:13.5, marginBottom:10 }}>✉ support@webertech.co.ke</p>
             <p style={{ fontSize:13.5, marginBottom:10 }}>📞 +254 722 508 904</p>
-            <p style={{ fontSize:13.5, marginBottom:20 }}>📍 Mombasa, Kenya</p>
-            <a href={WHATSAPP} target="_blank" rel="noreferrer"
-              style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"9px 16px", background:"#25d366", borderRadius:9, color:"#fff", fontWeight:700, fontSize:13, textDecoration:"none" }}>
-              💬 WhatsApp Us
-            </a>
+            <p style={{ fontSize:13.5, marginBottom:10 }}>📍 Mombasa, Kenya</p>
           </div>
         </div>
 
         <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:22, display:"flex", flexWrap:"wrap", gap:12, alignItems:"center", justifyContent:"space-between" }}>
-          <p style={{ fontSize:12.5 }}>© {year} WeberTech. All rights reserved. · webertech.co.ke</p>
+          <p style={{ fontSize:12.5 }}>© {YEAR} WeberTech. All rights reserved.</p>
           <p style={{ fontSize:12.5 }}>Made with ❤ in Kenya 🇰🇪</p>
         </div>
       </div>
