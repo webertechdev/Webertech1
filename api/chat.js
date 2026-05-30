@@ -38,10 +38,12 @@ Keep answers short and friendly.
 
    // GEMINI API CALL (Using gemini-3.1-flash-lite-preview)
 const response = await fetch(
-   `https://googleapis.com{apiKey}`,
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
   {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({
       contents: [
         {
