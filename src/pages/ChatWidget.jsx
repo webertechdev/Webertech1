@@ -331,6 +331,7 @@ export default function ChatWidget() {
 
   // ── Send message ──
   const send = async (text) => {
+    console.log("🔥 SEND CLICKED");
     const q = (text || input).trim();
     if (!q || loading) return;
     setInput("");
