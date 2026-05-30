@@ -1,7 +1,5 @@
 // api/chat.js
 // Vercel Serverless Function — calls Claude API
-// Place at: /api/chat.js (project ROOT — same level as src/, package.json)
-// Env var needed in Vercel: ANTHROPIC_API_KEY
 
 const SYSTEM_PROMPT = `You are WeberTech Support AI, the official assistant for WeberTech (webertech.co.ke).
 
@@ -30,56 +28,64 @@ RULES:
 7. Always give WhatsApp +254722508904 for urgent issues.`;
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin",  "*");
+  // Setup standard Cross-Origin Resource Sharing (CORS) headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST")    return res.status(405).json({ error: "Method not allowed" });
-
-  const { messages, lang } = req.body;
-
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: "messages array is required" });
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "AI service not configured. Please contact support." });
-  }
-
-  const systemPrompt = SYSTEM_PROMPT + (
-    lang === "sw"
-      ? "\n\nIMPORTANT: Respond in Swahili (Kiswahili). Be natural and friendly like a Kenyan."
-      : "\n\nRespond in English. Be clear, warm and concise."
-  );
-
-  // Filter to only user/ai messages, remove greeting
-  const history = messages
-    .filter(m => (m.role === "user" || m.role === "ai") && m.id !== "greeting" && !m.id?.startsWith("greeting"))
-    .slice(-10)
-    .map(m => ({
-      role:    m.role === "ai" ? "assistant" : "user",
-      content: String(m.text || ""),
-    }));
-
-  if (history.length === 0) {
-    return res.status(400).json({ error: "No valid messages found" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method:  "POST",
+    // 1. Safe extraction of incoming request data
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const { messages, lang } = body || {};
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "messages array is required" });
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "AI service not configured. Please contact support." });
+    }
+
+    const systemPrompt = SYSTEM_PROMPT + (
+      lang === "sw"
+        ? "\n\nIMPORTANT: Respond in Swahili (Kiswahili). Be natural and friendly like a Kenyan."
+        : "\n\nRespond in English. Be clear, warm and concise."
+    );
+
+    // 2. Map and parse frontend structures seamlessly
+    const history = messages
+      .filter(m => (m.role === "user" || m.role === "ai" || m.role === "assistant") && m.id !== "greeting" && !m.id?.startsWith("greeting"))
+      .slice(-10)
+      .map(m => {
+        const textContent = String(m.text || m.content || "").trim();
+        return {
+          role: m.role === "ai" ? "assistant" : m.role,
+          content: textContent
+        };
+      })
+      .filter(m => m.content.length > 0);
+
+    if (history.length === 0) {
+      return res.status(400).json({ error: "No valid content messages found" });
+    }
+
+    // 3. Request data payload from Anthropic API
+    const response = await fetch("https://anthropic.com", {
+      method: "POST",
       headers: {
-        "Content-Type":      "application/json",
-        "x-api-key":         apiKey,
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model:      "claude-3-5-haiku-20241022",   // ✅ correct model string
+        model: "claude-3-5-haiku-20241022",
         max_tokens: 500,
-        system:     systemPrompt,
-        messages:   history,
+        system: systemPrompt,
+        messages: history,
       }),
     });
 
@@ -89,7 +95,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "AI service error. Please try again or contact WhatsApp: +254722508904" });
     }
 
-    const data   = await response.json();
+    const data = await response.json();
+    
+    // 4. Fixed structural optional chaining notation
     const answer = data?.content?.[0]?.text?.trim();
 
     if (!answer) {
@@ -102,4 +110,4 @@ export default async function handler(req, res) {
     console.error("chat.js exception:", err.message);
     return res.status(500).json({ error: "Service temporarily unavailable. Contact us: +254722508904" });
   }
-};
+}
