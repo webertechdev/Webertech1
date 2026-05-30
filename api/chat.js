@@ -29,7 +29,7 @@ RULES:
 6. Keep answers short and friendly. Max 3 paragraphs.
 7. Always give WhatsApp +254722508904 for urgent issues.`;
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin",  "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
