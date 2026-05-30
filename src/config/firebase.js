@@ -1,4 +1,8 @@
 // src/config/firebase.js
+// ⚠️ IMPORTANT: Vercel env vars MUST use VITE_ prefix for Vite to read them
+// WRONG: REACT_APP_PROJECT_ID  → Vite cannot read this
+// RIGHT: VITE_FIREBASE_PROJECT_ID → Vite reads this correctly
+
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth }                 from "firebase/auth";
 import { getFirestore }            from "firebase/firestore";
@@ -12,6 +16,7 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+// Prevent duplicate app init on hot reload
 const app = getApps().length === 0
   ? initializeApp(firebaseConfig)
   : getApps()[0];
