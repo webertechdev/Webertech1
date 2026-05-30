@@ -36,28 +36,30 @@ Keep answers short and friendly.
       ...messages.slice(-10).map(m => `${m.role}: ${m.text}`)
     ].join("\n");
 
-    // GEMINI API CALL
-    const response = await fetch(
-       `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
+   // GEMINI API CALL (Using gemini-3.1-flash-lite-preview)
+const response = await fetch(
+   `https://googleapis.com{apiKey}`,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
             {
-              parts: [
-                {
-                  text: prompt
-                }
-              ]
+              text: prompt
             }
           ]
-        })
-      }
-    );
+        }
+      ]
+    })
+  }
+);
+
 
     const data = await response.json();
 
+    console.log("Gemini response:", JSON.stringify(data, null, 2));
     if (!response.ok) {
       console.error("Gemini error:", data);
       return res.status(500).json({ error: "AI service error" });
