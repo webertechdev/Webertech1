@@ -20,6 +20,9 @@ import Dashboard   from "./pages/Dashboard";
 import Admin       from "./pages/Admin";
 import NotFound    from "./pages/NotFound";
 import ChatWidget  from "./pages/ChatWidget";
+import About from "./pages/About";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 // ── Route guards ────────────────────────────────────────────────
 function Protected({ user, loading, children }) {
@@ -81,6 +84,9 @@ export default function App() {
         <Route path="/cyber"       element={<Cyber />} />
         <Route path="/dev"         element={<Dev />} />
         <Route path="/hustle"      element={<Hustle />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
 
         <Route path="/dashboard" element={
           <Protected user={user} loading={loading}>
