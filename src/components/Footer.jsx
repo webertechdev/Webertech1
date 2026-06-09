@@ -43,7 +43,12 @@ export default function Footer() {
             {[["Home","/"],["Dashboard","/dashboard"]].map(([l,t])=>(
               <Link key={t} to={t} style={{ display:"block", color:"rgba(255,255,255,0.6)", textDecoration:"none", fontSize:13.5, marginBottom:10 }}>{l}</Link>
             ))}
-          </div>
+        </div>
+          <div style={{marginTop:"20px", textAlign:"center"}}>
+          <Link to="/about">About Us</Link> |{" "}
+          <Link to="/privacy">Privacy Policy</Link> |{" "}
+          <Link to="/terms">Terms & Conditions</Link>
+         </div>
 
           {/* Contact */}
           <div>
