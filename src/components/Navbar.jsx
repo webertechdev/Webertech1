@@ -252,13 +252,25 @@ export default function Navbar() {
             </a>
             <div className="wtn-auth">
               {user ? (
-                <>
-                  {isAdmin && <Link to="/admin" className="wtn-auth-admin">⚙ Admin</Link>}
-                  <Link to="/dashboard" className="wtn-auth-link">👤 Account</Link>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="" style={{ width: 32, height: 32, borderRadius: "50%", border: "2px solid #16a34a" }} />
+                    ) : (
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#16a34a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800 }}>
+                        {user.firstName ? user.firstName[0] : (user.email ? user.email[0].toUpperCase() : "U")}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{user.firstName || "Account"}</span>
+                      {isAdmin && <span style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24" }}>Admin</span>}
+                    </div>
+                  </div>
+                  <Link to="/dashboard" className="wtn-auth-link">Dashboard</Link>
                   <button onClick={logout} className="wtn-signout">Sign Out</button>
-                </>
+                </div>
               ) : (
-                <Link to="/dashboard" className="wtn-auth-link">Login</Link>
+                <Link to="/auth/login" className="wtn-auth-link">Login</Link>
               )}
             </div>
             {/* Hamburger */}
@@ -301,21 +313,34 @@ export default function Navbar() {
           <div style={{ borderTop:"1px solid rgba(255,255,255,0.1)", marginTop:12, paddingTop:16 }}>
             {user ? (
               <>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", marginBottom: 12 }}>
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="" style={{ width: 44, height: 44, borderRadius: "50%", border: "2px solid #16a34a" }} />
+                  ) : (
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#16a34a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 800 }}>
+                      {user.firstName ? user.firstName[0] : (user.email ? user.email[0].toUpperCase() : "U")}
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>{user.firstName} {user.lastName}</div>
+                    <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>{user.email}</div>
+                  </div>
+                </div>
                 {isAdmin && (
                   <Link to="/admin" className="wtn-mlink" onClick={() => setMenuOpen(false)}
                     style={{ color:"#fbbf24" }}>⚙ Admin Panel</Link>
                 )}
                 <Link to="/dashboard" className="wtn-mlink" onClick={() => setMenuOpen(false)}>
-                  👤 My Account
+                  📊 My Dashboard
                 </Link>
                 <button onClick={logout}
-                  style={{ width:"100%", padding:"12px 16px", border:"1.5px solid rgba(255,255,255,0.15)", borderRadius:12, background:"none", color:"rgba(255,255,255,0.6)", fontSize:15, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
-                  Sign Out
+                  style={{ width:"100%", padding:"12px 16px", border:"1.5px solid rgba(255,255,255,0.15)", borderRadius:12, background:"none", color:"#fee2e2", fontSize:15, fontWeight:700, cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+                  🚪 Sign Out
                 </button>
               </>
             ) : (
-              <Link to="/dashboard" className="wtn-mlink" onClick={() => setMenuOpen(false)}>
-                Login / Sign Up
+              <Link to="/auth/login" className="wtn-mlink" onClick={() => setMenuOpen(false)}>
+                🔑 Login / Sign Up
               </Link>
             )}
           </div>

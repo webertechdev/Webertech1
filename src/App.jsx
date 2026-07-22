@@ -21,6 +21,9 @@ import Government from "./pages/cyber/Government";
 import Business from "./pages/cyber/Business";
 import Printing from "./pages/cyber/Printing";
 import Writing from "./pages/cyber/Writing";
+import Login from "./pages/auth/Login";
+import Register from "./pages/auth/Register";
+import ForgotPassword from "./pages/auth/ForgotPassword";
 import Dev         from "./pages/Dev";
 import Hustle      from "./pages/Hustle";
 import Dashboard   from "./pages/Dashboard";
@@ -97,6 +100,9 @@ export default function App() {
         <Route path="/cyber/business"                      element={<Business />} />
         <Route path="/cyber/printing"                      element={<Printing />} />
         <Route path="/cyber/writing"                       element={<Writing />} />
+        <Route path="/auth/login"                          element={<Login />} />
+        <Route path="/auth/register"                       element={<Register />} />
+        <Route path="/auth/forgot-password"                element={<ForgotPassword />} />
         <Route path="/dev"         element={<Dev />} />
         <Route path="/hustle"      element={<Hustle />} />
         <Route path="/about" element={<About />} />
