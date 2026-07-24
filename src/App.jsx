@@ -13,7 +13,8 @@ import { auth, db }            from "./config/firebase";
 import Home        from "./pages/Home";
 import Academy     from "./pages/Academy";
 import Electronics from "./pages/Electronics";
-import Cyber       from "./pages/Cyber";
+import Cyber         from "./pages/Cyber";
+import CyberHomeEnhanced from "./pages/cyber/CyberHomeEnhanced";
 import CyberHome           from "./pages/cyber/CyberHome";
 import LegalDocuments      from "./pages/cyber/LegalDocuments";
 import LegalDocumentDetail from "./pages/cyber/LegalDocumentDetail";
@@ -93,7 +94,7 @@ export default function App() {
         <Route path="/"            element={<Home />} />
         <Route path="/academy"     element={<Academy />} />
         <Route path="/electronics" element={<Electronics />} />
-        <Route path="/cyber"                              element={<CyberHome />} />
+        <Route path="/cyber"                            element={<CyberHomeEnhanced />} />
         <Route path="/cyber/legal-documents"               element={<LegalDocuments />} />
         <Route path="/cyber/legal-documents/:slug"         element={<LegalDocumentDetail />} />
         <Route path="/cyber/government"                    element={<Government />} />

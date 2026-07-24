@@ -82,9 +82,12 @@ export default function Navbar() {
           text-decoration: none; flex-shrink: 0;
         }
         .wtn-logo-img {
-          height: 36px; width: auto;
-          filter: brightness(0) invert(1);
+          height: 44px; width: auto;
+          display: block;
           transition: opacity .2s;
+        }
+        @media (max-width: 640px) {
+          .wtn-logo-img { height: 34px; }
         }
         .wtn-logo-img:hover { opacity: .85; }
         .wtn-logo-fallback {
@@ -208,14 +211,15 @@ export default function Navbar() {
         <div className="wtn-inner">
 
           {/* ── Logo ── */}
-          <Link to="/" className="wtn-logo">
+          <Link to="/" className="wtn-logo" aria-label="WeberTech Home">
             <img
               src="/logo-webertech.png"
-              alt="WeberTech"
+              alt="WeberTech Logo"
               className="wtn-logo-img"
+              style={{ objectFit: "contain" }}
               onError={e => {
                 e.target.style.display = "none";
-                e.target.nextSibling.style.display = "flex";
+                if (e.target.nextSibling) e.target.nextSibling.style.display = "flex";
               }}
             />
             {/* Fallback if logo image missing */}
