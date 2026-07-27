@@ -37,7 +37,7 @@ export default function Navbar() {
           const snap = await getDoc(doc(db, "users", fu.uid));
           const data = snap.exists() ? snap.data() : {};
           setUser({ uid:fu.uid, email:fu.email, ...data });
-          setIsAdmin(data.isAdmin === true);
+          setIsAdmin(data.role === "admin" || data.isAdmin === true);
         } catch { setUser({ uid:fu.uid, email:fu.email }); }
       } else { setUser(null); setIsAdmin(false); }
     });

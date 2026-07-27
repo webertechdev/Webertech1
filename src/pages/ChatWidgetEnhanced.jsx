@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, serverTimestamp,
-  doc, setDoc, onSnapshot, query, orderBy
+  doc, setDoc, getDoc, onSnapshot, query, orderBy
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -122,7 +122,22 @@ export default function ChatWidgetEnhanced() {
     setSessionId(sid);
     const greeting = { role:"ai", text:GREETING[lang], time:tstamp(), id:"greeting" };
     setMsgs([greeting]);
-  }, []);
+
+    // Listen for real-time messages (including Admin replies)
+    const q = query(collection(db, "chats", sid, "messages"), orderBy("timestamp", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      if (snap.empty) return;
+      const newMsgs = snap.docs.map(d => ({
+        role: d.data().sender === "user" ? "user" : "ai",
+        text: d.data().text,
+        time: d.data().timestamp?.toDate().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || tstamp(),
+        id: d.id,
+        pdfData: d.data().metadata?.pdfData
+      }));
+      setMsgs([greeting, ...newMsgs]);
+    });
+    return () => unsub();
+  }, [lang]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior:"smooth" });
@@ -144,20 +159,28 @@ export default function ChatWidgetEnhanced() {
   const saveMsg = async (role, text, metadata = {}) => {
     if (!sessionId) return;
     try {
-      await setDoc(doc(db, "chats", sessionId), {
+      const chatRef = doc(db, "chats", sessionId);
+      const chatSnap = await getDoc(chatRef);
+      const chatData = chatSnap.exists() ? chatSnap.data() : {};
+
+      // Sync customer info and last message for Admin Dashboard
+      await setDoc(chatRef, {
         sessionId,
-        userId:    currentUser?.uid || null,
-        userEmail: currentUser?.email || null,
+        userId:       currentUser?.uid || null,
+        userEmail:    currentUser?.email || null,
+        customerName: currentUser?.displayName || currentUser?.email?.split("@")[0] || "Anonymous",
+        lastMessage:  text,
         lang,
-        updatedAt: serverTimestamp(),
-        status:    "active",
+        updatedAt:    serverTimestamp(),
+        status:       "active",
+        adminTakeover: chatData.adminTakeover || false
       }, { merge: true });
 
       await addDoc(collection(db, "chats", sessionId, "messages"), {
-        role,
+        sender:    role === "user" ? "user" : (role === "ai" ? "ai" : "admin"),
         text,
         metadata,
-        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
       });
     } catch (err) {
       console.error("Firestore save error:", err);
@@ -201,6 +224,13 @@ export default function ChatWidgetEnhanced() {
     setLoading(true);
 
     try {
+      // Check if admin has taken over
+      const chatSnap = await getDoc(doc(db, "chats", sessionId));
+      if (chatSnap.exists() && chatSnap.data().adminTakeover) {
+        setLoading(false);
+        return; // Admin is in control, AI stays silent
+      }
+
       const history = [...msgs, userMsg]
         .filter(m => m.role === "user" || m.role === "ai")
         .slice(-10)

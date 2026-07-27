@@ -1,9 +1,9 @@
 // src/pages/AdminEnhanced.jsx
-// Admin Dashboard — Phase 1 Complete
-// Tabs: Overview | Orders | Payments | Customers | Products | Analytics | Settings
+// Admin Dashboard — WeberTech Control Center
+// Tabs: Overview | Orders | Payments | Customers | Products | AI Training | Live Chats | Analytics | Settings
 
-import { useState, useEffect } from "react";
-import { collection, getDocs, doc, updateDoc, orderBy, query, where } from "firebase/firestore";
+import { useState, useEffect, useRef } from "react";
+import { collection, getDocs, doc, updateDoc, orderBy, query, where, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
@@ -17,10 +17,17 @@ export default function AdminEnhanced() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [activeChats, setActiveChats] = useState([]);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [adminReply, setAdminReply] = useState("");
+  const [aiKnowledge, setAiKnowledge] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
+  
+  const chatEndRef = useRef(null);
 
-  // Load all data
+  // Load all static data
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -45,101 +52,114 @@ export default function AdminEnhanced() {
     loadData();
   }, []);
 
+  // Real-time Chat Monitoring
+  useEffect(() => {
+    const q = query(collection(db, "chats"), orderBy("updatedAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setActiveChats(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, []);
+
+  // Load specific chat messages
+  useEffect(() => {
+    if (!selectedChat) return;
+    const q = query(collection(db, "chats", selectedChat.id, "messages"), orderBy("timestamp", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setChatMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
+    return () => unsub();
+  }, [selectedChat]);
+
+  const sendAdminReply = async () => {
+    if (!adminReply.trim() || !selectedChat) return;
+    try {
+      await addDoc(collection(db, "chats", selectedChat.id, "messages"), {
+        text: adminReply,
+        sender: "admin",
+        timestamp: serverTimestamp(),
+      });
+      await updateDoc(doc(db, "chats", selectedChat.id), {
+        lastMessage: adminReply,
+        updatedAt: serverTimestamp(),
+        adminTakeover: true
+      });
+      setAdminReply("");
+    } catch (err) {
+      toast.error("Failed to send reply");
+    }
+  };
+
+  const updateAiKnowledge = async () => {
+    try {
+      await updateDoc(doc(db, "config", "weberai"), {
+        knowledgeBase: aiKnowledge,
+        updatedAt: serverTimestamp()
+      });
+      toast.success("WeberAI Knowledge Base Updated!");
+    } catch (err) {
+      toast.error("Failed to update AI knowledge");
+    }
+  };
+
   // Calculate stats
   const paidOrders = orders.filter(o => o.status === "paid");
   const totalRevenue = paidOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
-  const avgOrderValue = paidOrders.length > 0 ? (totalRevenue / paidOrders.length).toFixed(0) : 0;
   const pendingOrders = orders.filter(o => o.status === "pending").length;
   const failedOrders = orders.filter(o => o.status === "failed").length;
-
-  // Filter data
-  const filteredOrders = orders
-    .filter(o => filter === "All" || o.status === filter)
-    .filter(o => !search || o.productTitle?.toLowerCase().includes(search.toLowerCase()) || o.orderId?.includes(search));
-
-  const filteredCustomers = customers.filter(c => !search || c.email?.toLowerCase().includes(search.toLowerCase()) || c.firstName?.toLowerCase().includes(search.toLowerCase()));
-
-  const filteredProducts = products.filter(p => !search || p.title?.toLowerCase().includes(search.toLowerCase()) || p.slug?.includes(search));
-
-  // Export CSV
-  const exportCSV = () => {
-    const rows = [
-      ["Order ID", "Product", "Amount", "Status", "Payment Method", "Date"],
-      ...orders.map(o => [o.orderId, o.productTitle, o.amount, o.status, o.paymentMethod, o.createdAt?.toDate?.().toLocaleDateString?.() || ""]),
-    ];
-    const csv = rows.map(r => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `webertech-orders-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-  };
 
   const BADGE = {
     paid: <span className="badge-paid">✅ Paid</span>,
     pending: <span className="badge-pending">⏳ Pending</span>,
     failed: <span className="badge-failed">❌ Failed</span>,
-    active: <span className="badge-completed">✓ Active</span>,
-    inactive: <span className="badge-failed">✗ Inactive</span>,
   };
 
   return (
     <>
       <style>{`
         body { font-family: 'Segoe UI', system-ui, sans-serif; }
-        @keyframes fadeu { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .adm-tab { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border: none; border-radius: 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; background: none; color: #6b7280; transition: all .15s; text-align: left; margin-bottom: 4px; font-family: inherit; width: 100%; }
         .adm-tab:hover { background: #f9fafb; color: #111827; }
-        .adm-tab.on { background: #fef3c7; color: #92400e; }
-        .adm-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 16px; padding: 22px; animation: fadeu .3s ease both; }
+        .adm-tab.on { background: #16a34a; color: #fff; }
+        .adm-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 16px; padding: 22px; }
         .adm-stat { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; padding: 20px; }
-        .adm-row:hover { background: #fafafa; }
         .adm-tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-        .adm-tbl th { padding: 10px 14px; text-align: left; font-size: 11.5px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .4px; border-bottom: 2px solid #f3f4f6; white-space: nowrap; }
-        .adm-tbl td { padding: 12px 14px; border-bottom: 1px solid #f9fafb; vertical-align: middle; }
-        .badge-paid { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: #dcfce7; color: #15803d; }
-        .badge-pending { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: #fef3c7; color: #92400e; }
-        .badge-failed { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: #fee2e2; color: #dc2626; }
-        .badge-completed { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: #dcfce7; color: #15803d; }
-        .btn-primary { background: #16a34a; color: #fff; border: none; border-radius: 10px; padding: 9px 16px; font-weight: 700; cursor: pointer; font-size: 13.5px; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
-        .btn-primary:hover { background: #15803d; }
-        @media (max-width: 768px) { .adm-layout { grid-template-columns: 1fr !important; } }
+        .adm-tbl th { padding: 10px 14px; text-align: left; font-size: 11.5px; font-weight: 700; color: #6b7280; text-transform: uppercase; border-bottom: 2px solid #f3f4f6; }
+        .adm-tbl td { padding: 12px 14px; border-bottom: 1px solid #f9fafb; }
+        .badge-paid { padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: #dcfce7; color: #15803d; }
+        .badge-pending { padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: #fef3c7; color: #92400e; }
+        .badge-failed { padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; background: #fee2e2; color: #dc2626; }
+        .chat-list-item { padding: 12px; border-radius: 10px; cursor: pointer; border-bottom: 1px solid #f3f4f6; transition: all .2s; }
+        .chat-list-item:hover { background: #f9fafb; }
+        .chat-list-item.active { background: #f0fdf4; border-left: 4px solid #16a34a; }
+        .msg-bubble { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; margin-bottom: 8px; }
+        .msg-user { background: #f3f4f6; color: #1f2937; align-self: flex-start; }
+        .msg-ai { background: #dcfce7; color: #166534; align-self: flex-end; }
+        .msg-admin { background: #16a34a; color: #fff; align-self: flex-end; }
       `}</style>
 
       <Toaster position="top-center" />
       <Navbar />
 
       <div style={{ paddingTop: 64, background: "#f9fafb", minHeight: "100vh" }}>
-
-        {/* Header */}
-        <div style={{ background: "linear-gradient(135deg,#0f172a,#92400e,#d97706)", padding: "32px 20px 28px" }}>
+        <div style={{ background: "#0f172a", padding: "32px 20px" }}>
           <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.15)", borderRadius: 99, padding: "4px 14px", fontSize: 12, fontWeight: 700, color: "#fef3c7", marginBottom: 10 }}>
-              ⚙ Admin Panel
-            </div>
-            <h1 style={{ color: "#fff", fontWeight: 900, fontSize: "clamp(22px,4vw,32px)", letterSpacing: "-0.5px" }}>
-              WeberTech Admin — Phase 1
-            </h1>
-            <p style={{ color: "rgba(255,255,255,0.65)", fontSize: 13.5, marginTop: 4 }}>
-              Orders, payments, customers, products & analytics
-            </p>
+            <h1 style={{ color: "#fff", fontWeight: 900, fontSize: 32 }}>WeberTech Control Center</h1>
+            <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Platform-wide monitoring, AI training, and support takeover</p>
           </div>
         </div>
 
-        {/* Layout */}
-        <div className="adm-layout" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 24, maxWidth: 1280, margin: "0 auto", padding: "24px 20px" }}>
-
-          {/* Sidebar */}
-          <aside style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 16, padding: 20, height: "fit-content", position: "sticky", top: 80 }}>
-            <p style={{ fontSize: 11.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>Menu</p>
+        <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 24, maxWidth: 1280, margin: "0 auto", padding: "24px 20px" }}>
+          <aside style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 16, padding: 20, height: "fit-content" }}>
             {[
               { id: "overview", icon: "📊", label: "Overview" },
-              { id: "orders", icon: "📋", label: "Orders" },
+              { id: "chats", icon: "💬", label: "Live Chats" },
+              { id: "ai", icon: "🤖", label: "AI Training" },
+              { id: "orders", icon: "📋", label: "All Orders" },
               { id: "payments", icon: "💰", label: "Payments" },
               { id: "customers", icon: "👥", label: "Customers" },
               { id: "products", icon: "📦", label: "Products" },
-              { id: "analytics", icon: "📈", label: "Analytics" },
               { id: "settings", icon: "⚙️", label: "Settings" },
             ].map(t => (
               <button key={t.id} className={`adm-tab ${tab === t.id ? "on" : ""}`} onClick={() => setTab(t.id)}>
@@ -148,235 +168,119 @@ export default function AdminEnhanced() {
             ))}
           </aside>
 
-          {/* Main */}
           <main>
-
-            {/* OVERVIEW */}
             {tab === "overview" && (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 16, marginBottom: 24 }}>
-                  {[
-                    { icon: "💰", label: "Total Revenue", value: `KES ${totalRevenue.toLocaleString()}`, color: "#16a34a", bg: "#dcfce7" },
-                    { icon: "📋", label: "Total Orders", value: orders.length, color: "#2563eb", bg: "#dbeafe" },
-                    { icon: "✅", label: "Paid Orders", value: paidOrders.length, color: "#16a34a", bg: "#dcfce7" },
-                    { icon: "⏳", label: "Pending", value: pendingOrders, color: "#d97706", bg: "#fef3c7" },
-                    { icon: "❌", label: "Failed", value: failedOrders, color: "#dc2626", bg: "#fee2e2" },
-                    { icon: "👥", label: "Customers", value: customers.length, color: "#7c3aed", bg: "#ede9fe" },
-                  ].map(s => (
-                    <div key={s.label} className="adm-stat">
-                      <div style={{ fontSize: 22, marginBottom: 8 }}>{s.icon}</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.value}</div>
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 3 }}>{s.label}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16 }}>
+                <div className="adm-stat">
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>Total Revenue</div>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: "#16a34a" }}>KES {totalRevenue.toLocaleString()}</div>
+                </div>
+                <div className="adm-stat">
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>Active Chats</div>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: "#2563eb" }}>{activeChats.length}</div>
+                </div>
+                <div className="adm-stat">
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>Pending Orders</div>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: "#d97706" }}>{pendingOrders}</div>
+                </div>
+              </div>
+            )}
+
+            {tab === "chats" && (
+              <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20, background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 16, height: 600 }}>
+                <div style={{ borderRight: "1.5px solid #f3f4f6", overflowY: "auto" }}>
+                  <div style={{ padding: 16, fontWeight: 700, borderBottom: "1.5px solid #f3f4f6" }}>Active Sessions</div>
+                  {activeChats.map(c => (
+                    <div key={c.id} className={`chat-list-item ${selectedChat?.id === c.id ? "active" : ""}`} onClick={() => setSelectedChat(c)}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{c.customerName || "Anonymous"}</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.lastMessage}</div>
                     </div>
                   ))}
                 </div>
-
-                <div className="adm-card">
-                  <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Recent Orders</h3>
-                  {loading ? <Spinner /> : (
-                    <div style={{ overflowX: "auto" }}>
-                      <table className="adm-tbl">
-                        <thead><tr><th>Order ID</th><th>Product</th><th>Amount</th><th>Status</th><th>Method</th><th>Date</th></tr></thead>
-                        <tbody>
-                          {orders.slice(0, 5).map(o => (
-                            <tr key={o.id} className="adm-row">
-                              <td style={{ fontWeight: 700, fontFamily: "monospace", fontSize: 12 }}>{o.orderId}</td>
-                              <td>{o.productTitle}</td>
-                              <td style={{ fontWeight: 700 }}>KES {o.amount?.toLocaleString()}</td>
-                              <td>{BADGE[o.status] || BADGE.pending}</td>
-                              <td style={{ fontSize: 12, color: "#6b7280" }}>{o.paymentMethod}</td>
-                              <td style={{ color: "#9ca3af", fontSize: 12.5 }}>{o.createdAt?.toDate?.().toLocaleDateString?.() || "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {selectedChat ? (
+                    <>
+                      <div style={{ padding: 16, borderBottom: "1.5px solid #f3f4f6", display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontWeight: 700 }}>Chat with {selectedChat.customerName}</span>
+                        <span style={{ fontSize: 12, color: "#16a34a" }}>{selectedChat.adminTakeover ? "● Admin Controlled" : "● AI Responding"}</span>
+                      </div>
+                      <div style={{ flex: 1, padding: 20, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+                        {chatMessages.map(m => (
+                          <div key={m.id} className={`msg-bubble msg-${m.sender}`}>
+                            {m.text}
+                          </div>
+                        ))}
+                        <div ref={chatEndRef} />
+                      </div>
+                      <div style={{ padding: 16, borderTop: "1.5px solid #f3f4f6", display: "flex", gap: 10 }}>
+                        <input style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", outline: "none" }} placeholder="Type admin reply..." value={adminReply} onChange={e => setAdminReply(e.target.value)} onKeyPress={e => e.key === "Enter" && sendAdminReply()} />
+                        <button onClick={sendAdminReply} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "0 20px", fontWeight: 700 }}>Send</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#9ca3af" }}>Select a chat to start monitoring</div>
                   )}
                 </div>
-              </>
+              </div>
             )}
 
-            {/* ORDERS */}
+            {tab === "ai" && (
+              <div className="adm-card">
+                <h3 style={{ fontWeight: 700, marginBottom: 16 }}>WeberAI Training Hub</h3>
+                <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 20 }}>Update the core knowledge base WeberAI uses to answer customer queries.</p>
+                <textarea style={{ width: "100%", height: 300, padding: 16, borderRadius: 12, border: "1.5px solid #e5e7eb", outline: "none", fontFamily: "monospace", fontSize: 13 }} placeholder="Enter new service details, pricing, or instructions..." value={aiKnowledge} onChange={e => setAiKnowledge(e.target.value)} />
+                <button onClick={updateAiKnowledge} style={{ marginTop: 16, background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontWeight: 700, cursor: "pointer" }}>Update AI Knowledge</button>
+              </div>
+            )}
+
             {tab === "orders" && (
               <div className="adm-card">
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
-                  <h3 style={{ fontWeight: 700, fontSize: 16 }}>All Orders ({orders.length})</h3>
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <input style={{ padding: "9px 14px", border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 14, outline: "none", fontFamily: "inherit", width: 210 }} placeholder="Search order, product…" value={search} onChange={e => setSearch(e.target.value)} />
-                    {["All", "paid", "pending", "failed"].map(f => (
-                      <button key={f} onClick={() => setFilter(f)} style={{ padding: "7px 14px", borderRadius: 8, border: `2px solid ${filter === f ? "#d97706" : "#e5e7eb"}`, background: filter === f ? "#fef3c7" : "#fff", color: filter === f ? "#92400e" : "#6b7280", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
-                        {f}
-                      </button>
-                    ))}
-                    <button className="btn-primary" onClick={exportCSV}>⬇ CSV</button>
-                  </div>
+                <h3 style={{ fontWeight: 700, marginBottom: 16 }}>All Orders ({orders.length})</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="adm-tbl">
+                    <thead><tr><th>Order ID</th><th>Product</th><th>Amount</th><th>Status</th><th>Customer</th><th>Date</th></tr></thead>
+                    <tbody>
+                      {orders.map(o => (
+                        <tr key={o.id}>
+                          <td style={{ fontWeight: 700, fontFamily: "monospace", fontSize: 12 }}>{o.orderId}</td>
+                          <td>{o.productTitle}</td>
+                          <td>KES {o.amount?.toLocaleString()}</td>
+                          <td>{BADGE[o.status] || BADGE.pending}</td>
+                          <td>{o.customerName || o.customerEmail}</td>
+                          <td>{o.createdAt?.toDate?.().toLocaleDateString() || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                {loading ? <Spinner /> : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="adm-tbl">
-                      <thead><tr><th>Order ID</th><th>Product</th><th>Amount</th><th>Status</th><th>Method</th><th>Customer</th><th>Date</th></tr></thead>
-                      <tbody>
-                        {filteredOrders.map(o => (
-                          <tr key={o.id} className="adm-row">
-                            <td style={{ fontWeight: 700, fontFamily: "monospace", fontSize: 12 }}>{o.orderId}</td>
-                            <td>{o.productTitle}</td>
-                            <td style={{ fontWeight: 700 }}>KES {o.amount?.toLocaleString()}</td>
-                            <td>{BADGE[o.status] || BADGE.pending}</td>
-                            <td style={{ fontSize: 12, color: "#6b7280" }}>{o.paymentMethod}</td>
-                            <td style={{ fontSize: 12, color: "#6b7280" }}>{o.customerName || o.customerEmail}</td>
-                            <td style={{ color: "#9ca3af", fontSize: 12.5 }}>{o.createdAt?.toDate?.().toLocaleDateString?.() || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {filteredOrders.length === 0 && <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>No orders found.</p>}
-                  </div>
-                )}
               </div>
             )}
 
-            {/* PAYMENTS */}
-            {tab === "payments" && (
-              <div className="adm-card">
-                <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>All Payments ({payments.length})</h3>
-                {loading ? <Spinner /> : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="adm-tbl">
-                      <thead><tr><th>Order ID</th><th>Amount</th><th>Method</th><th>Phone</th><th>M-PESA Ref</th><th>Date</th></tr></thead>
-                      <tbody>
-                        {payments.map(p => (
-                          <tr key={p.id} className="adm-row">
-                            <td style={{ fontWeight: 700, fontFamily: "monospace", fontSize: 12 }}>{p.orderId}</td>
-                            <td style={{ fontWeight: 700 }}>KES {p.amount?.toLocaleString()}</td>
-                            <td style={{ fontSize: 12, color: "#6b7280" }}>{p.method}</td>
-                            <td style={{ fontFamily: "monospace", fontSize: 12 }}>{p.phone}</td>
-                            <td style={{ fontFamily: "monospace", fontSize: 12 }}>{p.mpesaRef || "—"}</td>
-                            <td style={{ color: "#9ca3af", fontSize: 12.5 }}>{p.createdAt?.toDate?.().toLocaleDateString?.() || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {payments.length === 0 && <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>No payments yet.</p>}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* CUSTOMERS */}
-            {tab === "customers" && (
-              <div className="adm-card">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-                  <h3 style={{ fontWeight: 700, fontSize: 16 }}>All Customers ({customers.length})</h3>
-                  <input style={{ padding: "9px 14px", border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 14, outline: "none", fontFamily: "inherit", width: 240 }} placeholder="Search name, email…" value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-                {loading ? <Spinner /> : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="adm-tbl">
-                      <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Joined</th></tr></thead>
-                      <tbody>
-                        {filteredCustomers.map(c => (
-                          <tr key={c.id} className="adm-row">
-                            <td style={{ fontWeight: 700 }}>{c.firstName} {c.lastName}</td>
-                            <td style={{ fontSize: 13 }}>{c.email}</td>
-                            <td style={{ fontSize: 12, color: "#6b7280" }}>{c.phone || "—"}</td>
-                            <td><span style={{ fontSize: 11.5, fontWeight: 700, background: c.isAdmin ? "#fef3c7" : "#f3f4f6", color: c.isAdmin ? "#92400e" : "#6b7280", padding: "3px 10px", borderRadius: 99 }}>{c.isAdmin ? "Admin" : "Customer"}</span></td>
-                            <td style={{ color: "#9ca3af", fontSize: 12.5 }}>{c.createdAt?.toDate?.().toLocaleDateString?.() || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {filteredCustomers.length === 0 && <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>No customers found.</p>}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* PRODUCTS */}
             {tab === "products" && (
               <div className="adm-card">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-                  <h3 style={{ fontWeight: 700, fontSize: 16 }}>All Products ({products.length})</h3>
-                  <input style={{ padding: "9px 14px", border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 14, outline: "none", fontFamily: "inherit", width: 240 }} placeholder="Search title, slug…" value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-                {loading ? <Spinner /> : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="adm-tbl">
-                      <thead><tr><th>Title</th><th>Category</th><th>Price</th><th>Type</th><th>Status</th></tr></thead>
-                      <tbody>
-                        {filteredProducts.map(p => (
-                          <tr key={p.id} className="adm-row">
-                            <td style={{ fontWeight: 700 }}>{p.title}</td>
-                            <td style={{ fontSize: 12, color: "#6b7280" }}>{p.category}</td>
-                            <td style={{ fontWeight: 700 }}>KES {p.price?.toLocaleString()}</td>
-                            <td style={{ fontSize: 12, color: "#6b7280" }}>{p.type}</td>
-                            <td>{BADGE[p.status] || BADGE.inactive}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {filteredProducts.length === 0 && <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px 0" }}>No products found.</p>}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ANALYTICS */}
-            {tab === "analytics" && (
-              <div className="adm-card">
-                <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Analytics & Insights</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 16 }}>
-                  <div style={{ background: "#f9fafb", padding: 16, borderRadius: 12 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Average Order Value</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: "#16a34a" }}>KES {avgOrderValue.toLocaleString()}</div>
-                  </div>
-                  <div style={{ background: "#f9fafb", padding: 16, borderRadius: 12 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Conversion Rate</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: "#2563eb" }}>{orders.length > 0 ? ((paidOrders.length / orders.length) * 100).toFixed(1) : 0}%</div>
-                  </div>
-                  <div style={{ background: "#f9fafb", padding: 16, borderRadius: 12 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Top Payment Method</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#7c3aed" }}>
-                      {payments.length > 0
-                        ? Object.entries(payments.reduce((acc, p) => ({ ...acc, [p.method]: (acc[p.method] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1])[0]?.[0] || "—"
-                        : "—"}
-                    </div>
-                  </div>
+                <h3 style={{ fontWeight: 700, marginBottom: 16 }}>Product Catalog ({products.length})</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="adm-tbl">
+                    <thead><tr><th>Slug</th><th>Title</th><th>Price</th><th>Type</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {products.map(p => (
+                        <tr key={p.id}>
+                          <td style={{ fontWeight: 700, fontFamily: "monospace", fontSize: 12 }}>{p.slug}</td>
+                          <td>{p.title}</td>
+                          <td>KES {p.price?.toLocaleString()}</td>
+                          <td>{p.type}</td>
+                          <td><span className="badge-paid">Active</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
-
-            {/* SETTINGS */}
-            {tab === "settings" && (
-              <div className="adm-card">
-                <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Admin Settings</h3>
-                <div style={{ background: "#f9fafb", padding: 16, borderRadius: 12, marginBottom: 16 }}>
-                  <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 10 }}>
-                    <strong>Firestore Collections:</strong> orders, payments, downloads, services, products, invoices, refunds, subscriptions, coupons, notifications, supportTickets
-                  </p>
-                  <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 10 }}>
-                    <strong>Payment Methods:</strong> NestLink (M-PESA), IntaSend (M-PESA/Card), Safaricom (Coming Soon)
-                  </p>
-                  <p style={{ fontSize: 14, color: "#6b7280" }}>
-                    <strong>Next Steps:</strong> Upload product files to Firebase Storage, configure webhook URLs, enable Firestore backups.
-                  </p>
-                </div>
-              </div>
-            )}
-
           </main>
         </div>
       </div>
-
       <Footer />
     </>
-  );
-}
-
-function Spinner() {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
-      <div style={{ width: 36, height: 36, border: "3px solid #e5e7eb", borderTopColor: "#16a34a", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
   );
 }

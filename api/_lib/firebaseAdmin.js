@@ -1,22 +1,37 @@
 // ─────────────────────────────────────────────────────────────────
 //  WeberTech — api/_lib/firebaseAdmin.js
 //  Shared Firebase Admin init for WeberPay Core serverless functions.
-//  Does NOT touch or replace the admin.initializeApp() calls already
-//  living inside api/stkpush.js / api/callback.js — those stay as-is
-//  and keep powering the existing Bundles M-PESA flow untouched.
 // ─────────────────────────────────────────────────────────────────
 const admin = require("firebase-admin");
 
-if (!admin.apps.length) {
-  admin.initializeApp({
+function initAdmin() {
+  if (admin.apps.length > 0) return admin.app();
+
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+  if (!projectId || !clientEmail || !privateKey) {
+    console.error("[FirebaseAdmin] Missing required environment variables.");
+    // In Vercel, this might happen if env vars aren't synced to the environment
+    throw new Error("Firebase Admin environment variables are not set.");
+  }
+
+  // Handle both literal newlines and escaped newlines from Vercel/CI
+  if (privateKey.includes("\\n")) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
+
+  return admin.initializeApp({
     credential: admin.credential.cert({
-      projectId:   process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+      projectId,
+      clientEmail,
+      privateKey,
     }),
   });
 }
 
+const app = initAdmin();
 const db = admin.firestore();
 
-module.exports = { admin, db };
+module.exports = { admin, db, app };
