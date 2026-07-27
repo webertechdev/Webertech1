@@ -28,7 +28,7 @@ import ForgotPassword from "./pages/auth/ForgotPassword";
 import Dev         from "./pages/Dev";
 import Hustle      from "./pages/Hustle";
 import Dashboard   from "./pages/Dashboard";
-import DashboardEnhanced from "./pages/DashboardEnhanced";
+import DashboardV3 from "./pages/DashboardV3";
 import Admin       from "./pages/Admin";
 import AdminEnhanced from "./pages/AdminEnhanced";
 import CommandCenter from "./pages/CommandCenter";
@@ -114,7 +114,7 @@ export default function App() {
 
         <Route path="/dashboard" element={
           <Protected user={user} loading={loading}>
-            <DashboardEnhanced user={user} />
+            <DashboardV3 user={user} />
           </Protected>
         } />
 
