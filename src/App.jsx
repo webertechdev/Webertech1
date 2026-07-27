@@ -36,7 +36,7 @@ import AdminShowcase from "./pages/AdminShowcase";
 import UnifiedControlCenterV3 from "./pages/UnifiedControlCenterV3";
 const UnifiedControlCenter = UnifiedControlCenterV3;
 import NotFound    from "./pages/NotFound";
-import ChatWidget from "./pages/ChatWidgetV3";
+import ChatWidget from "./pages/ChatWidgetEnhanced";
 import About from "./pages/About";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
