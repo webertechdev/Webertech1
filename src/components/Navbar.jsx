@@ -271,6 +271,7 @@ export default function Navbar() {
                     </div>
                   </div>
                   <Link to="/dashboard" className="wtn-auth-link">Dashboard</Link>
+                  {isAdmin && <Link to="/command-center" style={{ padding: "6px 12px", borderRadius: "8px", textDecoration: "none", fontSize: "12.5px", fontWeight: "600", color: "#4ade80", border: "1.5px solid rgba(74,222,128,0.3)", transition: "all .15s" }}>Command Center</Link>}
                   <button onClick={logout} className="wtn-signout">Sign Out</button>
                 </div>
               ) : (
@@ -331,8 +332,12 @@ export default function Navbar() {
                   </div>
                 </div>
                 {isAdmin && (
-                  <Link to="/admin" className="wtn-mlink" onClick={() => setMenuOpen(false)}
-                    style={{ color:"#fbbf24" }}>⚙ Admin Panel</Link>
+                  <>
+                    <Link to="/admin" className="wtn-mlink" onClick={() => setMenuOpen(false)}
+                      style={{ color:"#fbbf24" }}>⚙ Admin Panel</Link>
+                    <Link to="/command-center" className="wtn-mlink" onClick={() => setMenuOpen(false)}
+                      style={{ color:"#4ade80" }}>⚡ Command Center</Link>
+                  </>
                 )}
                 <Link to="/dashboard" className="wtn-mlink" onClick={() => setMenuOpen(false)}>
                   📊 My Dashboard

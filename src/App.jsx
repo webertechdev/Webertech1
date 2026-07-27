@@ -31,6 +31,8 @@ import Dashboard   from "./pages/Dashboard";
 import DashboardEnhanced from "./pages/DashboardEnhanced";
 import Admin       from "./pages/Admin";
 import AdminEnhanced from "./pages/AdminEnhanced";
+import CommandCenter from "./pages/CommandCenter";
+import AdminShowcase from "./pages/AdminShowcase";
 import NotFound    from "./pages/NotFound";
 import ChatWidget from "./pages/ChatWidgetEnhanced";
 import About from "./pages/About";
@@ -74,7 +76,7 @@ export default function App() {
           const snap = await getDoc(doc(db, "users", fu.uid));
           const data = snap.exists() ? snap.data() : {};
           setUser({ uid:fu.uid, email:fu.email, ...data });
-          setIsAdmin(data.isAdmin === true);
+          setIsAdmin(data.role === "admin" || data.isAdmin === true);
         } catch {
           setUser({ uid:fu.uid, email:fu.email });
           setIsAdmin(false);
@@ -121,6 +123,14 @@ export default function App() {
             <AdminEnhanced />
           </AdminOnly>
         } />
+
+        <Route path="/command-center" element={
+          <AdminOnly user={user} isAdmin={isAdmin} loading={loading}>
+            <CommandCenter />
+          </AdminOnly>
+        } />
+
+        <Route path="/admin-showcase" element={<AdminShowcase />} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
