@@ -1,0 +1,23 @@
+{
+  "name": "WeberTech - Kenya's Digital Services Platform",
+  "short_name": "WeberTech",
+  "description": "Bundles, dev, cyber, academy & more — all in one place",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "/logo-webertech.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-webertech.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
