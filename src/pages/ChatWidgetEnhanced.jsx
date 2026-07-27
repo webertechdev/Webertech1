@@ -289,10 +289,10 @@ export default function ChatWidgetEnhanced() {
           </div>
 
           <div className="wt-msgs">
-            {msgs.map(m => (
+            {msgs.filter(m => m && m.text).map(m => (
               <div key={m.id} style={{ display:"flex", flexDirection:"column", alignItems: m.role==="user" ? "flex-end" : "flex-start" }}>
                 <div className={`wt-bub ${m.role==="user" ? "wt-user" : "wt-ai"}`}>
-                  {m.text.split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{line}</p>)}
+                  {(m.text || "").split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{line}</p>)}
                   {m.pdfData && (
                     <button className="wt-pdf-btn" onClick={() => handleGeneratePDF(m.pdfData)}>
                       📄 Download {m.pdfData.type} PDF
