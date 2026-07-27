@@ -3,7 +3,7 @@
 // Tabs: Overview | Orders | Payments | Customers | Products | AI Training | Live Chats | Analytics | Settings
 
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, doc, updateDoc, orderBy, query, where, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, orderBy, query, where, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";

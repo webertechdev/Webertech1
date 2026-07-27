@@ -1,9 +1,9 @@
 // src/pages/CommandCenter.jsx
 // WeberTech Command Center — Total Platform Control & Real-time Monitoring
-// Wire every module: Cyber, Academy, Electronics, Bundles, Dev, Hustle
+// Manual Refresh Buttons for all data
 
-import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, doc, updateDoc, query, orderBy, onSnapshot, where, serverTimestamp, addDoc } from "firebase/firestore";
+import { useState, useEffect } from "react";
+import { collection, getDocs, doc, updateDoc, query, orderBy, where, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
@@ -21,60 +21,53 @@ const MODULES = [
 export default function CommandCenter() {
   const [activeModule, setActiveModule] = useState("cyber");
   const [stats, setStats] = useState({});
-  const [realtimeData, setRealtimeData] = useState({});
   const [orders, setOrders] = useState([]);
   const [chats, setChats] = useState([]);
   const [systemHealth, setSystemHealth] = useState("🟢 Healthy");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [bulkAction, setBulkAction] = useState("");
+  const [lastRefresh, setLastRefresh] = useState(null);
 
-  // Real-time Firestore listeners for all modules
-  useEffect(() => {
-    const loadRealtimeData = async () => {
-      setLoading(true);
-      try {
-        // Orders
-        const ordersQ = query(collection(db, "orders"), orderBy("createdAt", "desc"));
-        const unsubOrders = onSnapshot(ordersQ, (snap) => {
-          const allOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          setOrders(allOrders);
-          
-          // Calculate stats by module
-          const moduleStats = {};
-          MODULES.forEach(m => {
-            const moduleOrders = allOrders.filter(o => o.type === m.id || o.productSlug?.includes(m.id));
-            moduleStats[m.id] = {
-              totalOrders: moduleOrders.length,
-              paidOrders: moduleOrders.filter(o => o.status === "paid").length,
-              revenue: moduleOrders.filter(o => o.status === "paid").reduce((sum, o) => sum + (o.amount || 0), 0),
-              pendingOrders: moduleOrders.filter(o => o.status === "pending").length,
-            };
-          });
-          setStats(moduleStats);
-        });
+  // Manual refresh function
+  const refreshData = async () => {
+    setLoading(true);
+    try {
+      // Fetch orders
+      const ordersSnap = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"))).catch(() => ({ docs: [] }));
+      const allOrders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setOrders(allOrders);
 
-        // Chats
-        const chatsQ = query(collection(db, "chats"), orderBy("updatedAt", "desc"));
-        const unsubChats = onSnapshot(chatsQ, (snap) => {
-          setChats(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
+      // Fetch chats
+      const chatsSnap = await getDocs(query(collection(db, "chats"), orderBy("updatedAt", "desc"))).catch(() => ({ docs: [] }));
+      setChats(chatsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        setSystemHealth("🟢 All Systems Operational");
-        setLoading(false);
-
-        return () => {
-          unsubOrders();
-          unsubChats();
+      // Calculate stats by module
+      const moduleStats = {};
+      MODULES.forEach(m => {
+        const moduleOrders = allOrders.filter(o => o.type === m.id || o.productSlug?.includes(m.id));
+        moduleStats[m.id] = {
+          totalOrders: moduleOrders.length,
+          paidOrders: moduleOrders.filter(o => o.status === "paid").length,
+          revenue: moduleOrders.filter(o => o.status === "paid").reduce((sum, o) => sum + (o.amount || 0), 0),
+          pendingOrders: moduleOrders.filter(o => o.status === "pending").length,
         };
-      } catch (err) {
-        console.error("Real-time sync error:", err);
-        setSystemHealth("🔴 Connection Issue");
-        setLoading(false);
-      }
-    };
+      });
+      setStats(moduleStats);
+      setSystemHealth("🟢 All Systems Operational");
+      setLastRefresh(new Date().toLocaleTimeString());
+      toast.success("Data refreshed successfully!");
+    } catch (err) {
+      console.error("Refresh error:", err);
+      setSystemHealth("🔴 Connection Issue");
+      toast.error("Failed to refresh data");
+    }
+    setLoading(false);
+  };
 
-    loadRealtimeData();
+  // Load data on mount
+  useEffect(() => {
+    refreshData();
   }, []);
 
   const handleBulkAction = async () => {
@@ -87,30 +80,9 @@ export default function CommandCenter() {
       toast.success(`Order marked as ${bulkAction}`);
       setBulkAction("");
       setSelectedOrder(null);
+      refreshData(); // Refresh after update
     } catch (err) {
       toast.error("Failed to update order");
-    }
-  };
-
-  const generateDailyReport = async () => {
-    try {
-      const report = {
-        date: new Date().toISOString(),
-        totalOrders: orders.length,
-        totalRevenue: orders.filter(o => o.status === "paid").reduce((sum, o) => sum + (o.amount || 0), 0),
-        activeChats: chats.filter(c => c.status === "active").length,
-        moduleBreakdown: stats,
-        systemHealth,
-      };
-
-      await addDoc(collection(db, "reports"), {
-        ...report,
-        createdAt: serverTimestamp(),
-      });
-
-      toast.success("Daily report generated!");
-    } catch (err) {
-      toast.error("Failed to generate report");
     }
   };
 
@@ -125,6 +97,11 @@ export default function CommandCenter() {
         .cmd-header { background: linear-gradient(135deg, #1e293b, #334155); padding: 32px 20px; border-bottom: 2px solid #16a34a; }
         .cmd-title { color: #fff; font-size: 32px; font-weight: 900; margin: 0; }
         .cmd-subtitle { color: rgba(255,255,255,0.6); font-size: 14px; margin-top: 4px; }
+        .cmd-refresh-bar { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 16px; background: rgba(255,255,255,0.08); border: 1px solid rgba(22,163,74,0.3); border-radius: 10px; }
+        .cmd-refresh-time { color: rgba(255,255,255,0.6); font-size: 12px; }
+        .cmd-refresh-btn { background: #16a34a; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: all .2s; }
+        .cmd-refresh-btn:hover { background: #15803d; }
+        .cmd-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .cmd-layout { display: grid; grid-template-columns: 280px 1fr; gap: 24px; max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
         .cmd-sidebar { background: rgba(30,41,59,0.8); border: 1px solid rgba(22,163,74,0.2); border-radius: 16px; padding: 20px; height: fit-content; position: sticky; top: 80px; }
         .cmd-module-btn { width: 100%; padding: 14px 16px; border: none; border-radius: 12px; background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.7); cursor: pointer; font-size: 14px; font-weight: 600; text-align: left; margin-bottom: 8px; transition: all .2s; display: flex; align-items: center; gap: 10px; }
@@ -132,6 +109,8 @@ export default function CommandCenter() {
         .cmd-module-btn.active { background: #16a34a; color: #fff; box-shadow: 0 4px 12px rgba(22,163,74,0.4); }
         .cmd-main { display: flex; flex-direction: column; gap: 24px; }
         .cmd-card { background: rgba(30,41,59,0.6); border: 1px solid rgba(22,163,74,0.2); border-radius: 16px; padding: 24px; }
+        .cmd-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .cmd-card-title { color: #fff; font-size: 16px; font-weight: 700; margin: 0; }
         .cmd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
         .cmd-stat-box { background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.3); border-radius: 12px; padding: 20px; text-align: center; }
         .cmd-stat-value { font-size: 28px; font-weight: 900; color: #4ade80; }
@@ -158,10 +137,13 @@ export default function CommandCenter() {
       <div className="cmd-container">
         <div className="cmd-header">
           <h1 className="cmd-title">⚡ WeberTech Command Center</h1>
-          <p className="cmd-subtitle">Total Platform Control • Real-time Monitoring • Instant Updates</p>
-          <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <p className="cmd-subtitle">Total Platform Control • Manual Refresh • Instant Updates</p>
+          <div className="cmd-refresh-bar">
             <span className="cmd-health">{systemHealth}</span>
-            <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Last sync: {new Date().toLocaleTimeString()}</span>
+            <span className="cmd-refresh-time">Last refresh: {lastRefresh || "Never"}</span>
+            <button className="cmd-refresh-btn" onClick={refreshData} disabled={loading}>
+              {loading ? "⟳ Refreshing..." : "🔄 Refresh All Data"}
+            </button>
           </div>
         </div>
 
@@ -182,18 +164,18 @@ export default function CommandCenter() {
                 </div>
               </button>
             ))}
-            <button onClick={generateDailyReport} className="cmd-btn" style={{ width: "100%", marginTop: 16 }}>
-              📊 Generate Report
-            </button>
           </aside>
 
           {/* Main Content */}
           <main className="cmd-main">
             {/* Module Stats */}
             <div className="cmd-card">
-              <h2 style={{ color: "#fff", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
-                {currentModule?.name} — Real-time Dashboard
-              </h2>
+              <div className="cmd-card-header">
+                <h2 className="cmd-card-title">{currentModule?.name} — Dashboard</h2>
+                <button className="cmd-refresh-btn" onClick={refreshData} disabled={loading}>
+                  {loading ? "⟳" : "🔄"}
+                </button>
+              </div>
               <div className="cmd-stats">
                 <div className="cmd-stat-box">
                   <div className="cmd-stat-value">{moduleStats.totalOrders || 0}</div>
@@ -216,7 +198,12 @@ export default function CommandCenter() {
 
             {/* Orders Table */}
             <div className="cmd-card">
-              <h3 style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Recent Orders</h3>
+              <div className="cmd-card-header">
+                <h3 className="cmd-card-title">Recent Orders</h3>
+                <button className="cmd-refresh-btn" onClick={refreshData} disabled={loading}>
+                  {loading ? "⟳" : "🔄"}
+                </button>
+              </div>
               <div style={{ overflowX: "auto" }}>
                 <table className="cmd-table">
                   <thead>
@@ -237,7 +224,7 @@ export default function CommandCenter() {
                         <td>KES {o.amount?.toLocaleString()}</td>
                         <td>
                           <span className={`cmd-badge cmd-badge-${o.status}`}>
-                            {o.status.toUpperCase()}
+                            {o.status?.toUpperCase()}
                           </span>
                         </td>
                         <td>{o.customerName || o.customerEmail}</td>
@@ -284,7 +271,12 @@ export default function CommandCenter() {
 
             {/* Active Chats */}
             <div className="cmd-card">
-              <h3 style={{ color: "#fff", fontSize: 16, fontWeight: 700, marginBottom: 16 }}>💬 Active Support Chats ({chats.length})</h3>
+              <div className="cmd-card-header">
+                <h3 className="cmd-card-title">💬 Active Support Chats ({chats.length})</h3>
+                <button className="cmd-refresh-btn" onClick={refreshData} disabled={loading}>
+                  {loading ? "⟳" : "🔄"}
+                </button>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: 12 }}>
                 {chats.slice(0, 6).map(c => (
                   <div key={c.id} style={{ background: "rgba(22,163,74,0.1)", border: "1px solid rgba(22,163,74,0.2)", borderRadius: 12, padding: 16 }}>
