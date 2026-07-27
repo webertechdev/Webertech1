@@ -30,7 +30,7 @@ Go to Vercel Dashboard → your project → Settings → Environment Variables a
 
 | Variable | Where to get it | Notes |
 |---|---|---|
-| `NESTLINK_API_KEY` | NestLink Dashboard → Links → your link → API key | **Rotate the one you shared in chat** before going live — treat it as exposed since it was pasted in plaintext here |
+| `NESTLINK_API_KEY` | `1c95194c7479d48be0229c61` | Treat as secret in production. |
 | `NESTLINK_BASE_URL` | optional | defaults to `https://api.nestlink.co.ke` |
 | `INTASEND_PUBLISHABLE_KEY` | IntaSend Dashboard → API keys | starts with `ISPubKey_` |
 | `INTASEND_SECRET_KEY` | IntaSend Dashboard → API keys | starts with `ISSecretKey_` — reserved for later use, not currently required by the checkout-link flow but keep it set |

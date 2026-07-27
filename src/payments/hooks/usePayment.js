@@ -31,7 +31,7 @@ export function usePayment() {
     }
   }, []);
 
-  const watchOrder = useCallback((orderId) => {
+  const watchOrder = useCallback((orderId, confirmationLink) => {
     setState((s) => ({ ...s, step: "awaiting", orderId }));
 
     unsubscribeRef.current = listenToOrder(
@@ -62,8 +62,8 @@ export function usePayment() {
     setState({ ...initialState, step: "starting", method });
     try {
       if (method === "nestlink") {
-        const { orderId } = await startNestLinkPayment({ phone, amount: product.price, product, customer });
-        watchOrder(orderId);
+        const { orderId, confirmationLink } = await startNestLinkPayment({ phone, amount: product.price, product, customer });
+        watchOrder(orderId, confirmationLink);
       } else if (method === "intasend") {
         const { orderId, checkoutUrl } = await startIntaSendPayment({
           amount: product.price, email, phone, firstName, lastName, product, customer,

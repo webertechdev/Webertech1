@@ -19,7 +19,14 @@ export async function startNestLinkPayment({ phone, amount, product, customer })
       customerEmail: customer?.email || "",
     }),
   });
-  const data = await res.json();
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error("Invalid server response. Please check your internet or try again.");
+  }
+  
   if (!res.ok) throw new Error(data.error || "NestLink payment failed to start");
-  return data; // { success, orderId, message }
+  return data; // { success, orderId, message, confirmationLink }
 }

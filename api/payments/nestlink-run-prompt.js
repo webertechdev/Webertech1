@@ -4,10 +4,6 @@
 //  Creates a pending WeberPay order, then triggers a NestLink
 //  M-PESA STK push. NESTLINK_API_KEY lives ONLY here (server-side
 //  Vercel env var) — it is never sent to the browser.
-//
-//  Env vars needed in Vercel:
-//    NESTLINK_API_KEY   ← Api-Secret header value from NestLink dashboard
-//    NESTLINK_BASE_URL  ← optional, defaults to https://api.nestlink.co.ke
 // ─────────────────────────────────────────────────────────────────
 const { db } = require("../_lib/firebaseAdmin");
 const { generateOrderId, createPendingOrder, attachProviderRef, markOrderFailed } = require("../_lib/orders");
@@ -70,6 +66,8 @@ module.exports = async function handler(req, res) {
 
     const payerPhone = formatPhone(phone);
 
+    console.log(`[NestLink] Initiating prompt for ${orderId} - ${payerPhone} - KES ${parsedAmount}`);
+
     const nlRes = await fetch(`${NESTLINK_BASE}/runPrompt`, {
       method: "POST",
       headers: {
@@ -84,10 +82,18 @@ module.exports = async function handler(req, res) {
       }),
     });
 
-    const nlData = await nlRes.json();
+    const text = await nlRes.text();
+    let nlData;
+    try {
+      nlData = JSON.parse(text);
+    } catch (e) {
+      console.error("[NestLink] Non-JSON response:", text);
+      throw new Error(`NestLink returned invalid response: ${text.slice(0, 50)}...`);
+    }
 
     if (!nlRes.ok || nlData.status !== true) {
       const errMsg = nlData.msg || "NestLink STK push failed";
+      console.error("[NestLink] Error response:", nlData);
       await markOrderFailed(orderId, errMsg);
       return res.status(400).json({ error: errMsg, orderId });
     }
@@ -96,6 +102,7 @@ module.exports = async function handler(req, res) {
       merchantRequestId: nlData.data?.MerchantRequestID || null,
       checkoutRequestId: nlData.data?.CheckoutRequestID || null,
       confirmationLink: nlData.data?.ConfirmationLink || null,
+      ld_id: nlData.data?.ld_id || null,
     });
 
     return res.status(200).json({
@@ -105,7 +112,7 @@ module.exports = async function handler(req, res) {
     });
   } catch (err) {
     console.error("nestlink-run-prompt error:", err);
-    await markOrderFailed(orderId, "Server error initiating NestLink payment").catch(() => {});
-    return res.status(500).json({ error: "Failed to initiate NestLink payment. Please try again." });
+    await markOrderFailed(orderId, err.message || "Server error initiating NestLink payment").catch(() => {});
+    return res.status(500).json({ error: err.message || "Failed to initiate NestLink payment. Please try again." });
   }
 };
