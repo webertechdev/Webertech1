@@ -32,7 +32,7 @@ import DashboardEnhanced from "./pages/DashboardEnhanced";
 import Admin       from "./pages/Admin";
 import AdminEnhanced from "./pages/AdminEnhanced";
 import NotFound    from "./pages/NotFound";
-import ChatWidget  from "./pages/ChatWidget";
+import ChatWidget from "./pages/ChatWidgetEnhanced";
 import About from "./pages/About";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
