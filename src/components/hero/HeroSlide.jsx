@@ -2,4 +2,175 @@
 // Individual slide component with image, title, description, and CTAs
 
 export default function HeroSlide({ slide }) {
-  return (\n    <>\n      <style>{`\n        .hs-slide {\n          position: absolute;\n          top: 0;\n          left: 0;\n          width: 100%;\n          height: 100%;\n          background-size: cover;\n          background-position: center;\n          background-repeat: no-repeat;\n        }\n        .hs-overlay {\n          position: absolute;\n          top: 0;\n          left: 0;\n          width: 100%;\n          height: 100%;\n          background: linear-gradient(135deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 100%);\n        }\n        .hs-content {\n          position: absolute;\n          top: 50%;\n          left: 40px;\n          transform: translateY(-50%);\n          max-width: 600px;\n          z-index: 3;\n          color: #fff;\n        }\n        @media (max-width: 768px) {\n          .hs-content {\n            bottom: 40px;\n            top: auto;\n            left: 20px;\n            right: 20px;\n            transform: none;\n            max-width: 100%;\n          }\n        }\n        .hs-title {\n          font-size: 48px;\n          font-weight: 900;\n          margin-bottom: 12px;\n          line-height: 1.1;\n          letter-spacing: -1px;\n        }\n        @media (max-width: 768px) {\n          .hs-title { font-size: 32px; }\n        }\n        .hs-subtitle {\n          font-size: 18px;\n          color: rgba(255,255,255,0.9);\n          margin-bottom: 24px;\n          line-height: 1.5;\n        }\n        @media (max-width: 768px) {\n          .hs-subtitle { font-size: 15px; margin-bottom: 16px; }\n        }\n        .hs-description {\n          font-size: 14px;\n          color: rgba(255,255,255,0.8);\n          margin-bottom: 24px;\n          line-height: 1.6;\n        }\n        .hs-buttons {\n          display: flex;\n          gap: 12px;\n          flex-wrap: wrap;\n        }\n        @media (max-width: 640px) {\n          .hs-buttons { flex-direction: column; }\n        }\n        .hs-btn {\n          padding: 14px 28px;\n          border-radius: 10px;\n          border: none;\n          font-weight: 800;\n          font-size: 14px;\n          cursor: pointer;\n          transition: all 0.2s;\n          text-decoration: none;\n          display: inline-block;\n          text-align: center;\n        }\n        .hs-btn-primary {\n          background: #16a34a;\n          color: #fff;\n          box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4);\n        }\n        .hs-btn-primary:hover {\n          background: #15803d;\n          transform: translateY(-2px);\n          box-shadow: 0 6px 20px rgba(22, 163, 74, 0.6);\n        }\n        .hs-btn-secondary {\n          background: rgba(255,255,255,0.15);\n          color: #fff;\n          border: 1.5px solid rgba(255,255,255,0.3);\n          backdrop-filter: blur(10px);\n        }\n        .hs-btn-secondary:hover {\n          background: rgba(255,255,255,0.25);\n          border-color: rgba(255,255,255,0.5);\n          transform: translateY(-2px);\n        }\n      `}</style>\n\n      <div \n        className=\"hs-slide\"\n        style={{\n          backgroundImage: `url(${slide.image})`,\n          backgroundSize: \"cover\",\n          backgroundPosition: \"center\",\n        }}\n      >\n        <div className=\"hs-overlay\" />\n        \n        <div className=\"hs-content\">\n          <h2 className=\"hs-title\">{slide.title}</h2>\n          \n          {slide.subtitle && (\n            <p className=\"hs-subtitle\">{slide.subtitle}</p>\n          )}\n          \n          {slide.description && (\n            <p className=\"hs-description\">{slide.description}</p>\n          )}\n          \n          {slide.features && slide.features.length > 0 && (\n            <div style={{ marginBottom: 24 }}>\n              <div style={{\n                display: \"grid\",\n                gridTemplateColumns: \"repeat(auto-fit, minmax(120px, 1fr))\",\n                gap: 8,\n              }}>\n                {slide.features.map((feature, idx) => (\n                  <div key={idx} style={{\n                    fontSize: 12,\n                    color: \"rgba(255,255,255,0.85)\",\n                    padding: \"6px 0\",\n                  }}>\n                    ✓ {feature}\n                  </div>\n                ))}\n              </div>\n            </div>\n          )}\n          \n          {slide.cta && (\n            <div className=\"hs-buttons\">\n              <a \n                href={slide.cta.primary.href}\n                className=\"hs-btn hs-btn-primary\"\n              >\n                {slide.cta.primary.label}\n              </a>\n              {slide.cta.secondary && (\n                <a \n                  href={slide.cta.secondary.href}\n                  className=\"hs-btn hs-btn-secondary\"\n                >\n                  {slide.cta.secondary.label}\n                </a>\n              )}\n            </div>\n          )}\n        </div>\n      </div>\n    </>\n  );\n}\n
+  return (
+    <>
+      <style>{`
+        .hs-slide {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+        }
+        .hs-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(135deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.3) 100%);
+        }
+        .hs-content {
+          position: absolute;
+          top: 50%;
+          left: 40px;
+          transform: translateY(-50%);
+          max-width: 600px;
+          z-index: 3;
+          color: #fff;
+        }
+        @media (max-width: 768px) {
+          .hs-content {
+            bottom: 40px;
+            top: auto;
+            left: 20px;
+            right: 20px;
+            transform: none;
+            max-width: 100%;
+          }
+        }
+        .hs-title {
+          font-size: 48px;
+          font-weight: 900;
+          margin-bottom: 12px;
+          line-height: 1.1;
+          letter-spacing: -1px;
+        }
+        @media (max-width: 768px) {
+          .hs-title { font-size: 32px; }
+        }
+        .hs-subtitle {
+          font-size: 18px;
+          color: rgba(255,255,255,0.9);
+          margin-bottom: 24px;
+          line-height: 1.5;
+        }
+        @media (max-width: 768px) {
+          .hs-subtitle { font-size: 15px; margin-bottom: 16px; }
+        }
+        .hs-description {
+          font-size: 14px;
+          color: rgba(255,255,255,0.8);
+          margin-bottom: 24px;
+          line-height: 1.6;
+        }
+        .hs-buttons {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        @media (max-width: 640px) {
+          .hs-buttons { flex-direction: column; }
+        }
+        .hs-btn {
+          padding: 14px 28px;
+          border-radius: 10px;
+          border: none;
+          font-weight: 800;
+          font-size: 14px;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-decoration: none;
+          display: inline-block;
+          text-align: center;
+        }
+        .hs-btn-primary {
+          background: #16a34a;
+          color: #fff;
+          box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4);
+        }
+        .hs-btn-primary:hover {
+          background: #15803d;
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(22, 163, 74, 0.6);
+        }
+        .hs-btn-secondary {
+          background: rgba(255,255,255,0.15);
+          color: #fff;
+          border: 1.5px solid rgba(255,255,255,0.3);
+          backdrop-filter: blur(10px);
+        }
+        .hs-btn-secondary:hover {
+          background: rgba(255,255,255,0.25);
+          border-color: rgba(255,255,255,0.5);
+          transform: translateY(-2px);
+        }
+      `}</style>
+
+      <div 
+        className="hs-slide"
+        style={{
+          backgroundImage: `url(${slide.image})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        <div className="hs-overlay" />
+        
+        <div className="hs-content">
+          <h2 className="hs-title">{slide.title}</h2>
+          
+          {slide.subtitle && (
+            <p className="hs-subtitle">{slide.subtitle}</p>
+          )}
+          
+          {slide.description && (
+            <p className="hs-description">{slide.description}</p>
+          )}
+          
+          {slide.features && slide.features.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                gap: 8,
+              }}>
+                {slide.features.map((feature, idx) => (
+                  <div key={idx} style={{
+                    fontSize: 12,
+                    color: "rgba(255,255,255,0.85)",
+                    padding: "6px 0",
+                  }}>
+                    ✓ {feature}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {slide.cta && (
+            <div className="hs-buttons">
+              <a 
+                href={slide.cta.primary.href}
+                className="hs-btn hs-btn-primary"
+              >
+                {slide.cta.primary.label}
+              </a>
+              {slide.cta.secondary && (
+                <a 
+                  href={slide.cta.secondary.href}
+                  className="hs-btn hs-btn-secondary"
+                >
+                  {slide.cta.secondary.label}
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

@@ -419,7 +419,7 @@ export default function Home() {
             <h1 style={{ fontSize:"clamp(30px,4.5vw,52px)", fontWeight:900, color:"#fff", lineHeight:1.1, letterSpacing:"-1.5px", marginBottom:16 }}>
               WeberTech Solutions KE
             </h1>
-            <p style={{ fontSize:"clamp(15px,1.8vw,18px)", color:"rgba(255,255,255,0.8)", marginBottom:8, fontWeight:700, color:"#4ade80" }}>
+            <p style={{ fontSize:"clamp(15px,1.8vw,18px)", marginBottom:8, fontWeight:700, color:"#4ade80" }}>
               Your One-Stop Hub for Digital Services
             </p>
             <p style={{ fontSize:"clamp(13px,1.5vw,16px)", color:"rgba(255,255,255,0.65)", lineHeight:1.75, maxWidth:460, marginBottom:32 }}>

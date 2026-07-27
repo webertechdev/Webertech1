@@ -1,1 +1,35 @@
-// src/components/hero/HeroProgress.jsx\n// Progress bar showing current slide position\n\nexport default function HeroProgress({ current, total, isHovered }) {\n  return (\n    <>\n      <style>{`\n        .hp-container {\n          position: absolute;\n          bottom: 0;\n          left: 0;\n          width: 100%;\n          height: 3px;\n          background: rgba(255,255,255,0.1);\n          z-index: 4;\n        }\n        .hp-bar {\n          height: 100%;\n          background: linear-gradient(90deg, #16a34a, #4ade80);\n          transition: width 0.3s ease;\n          box-shadow: 0 0 10px rgba(22, 163, 74, 0.5);\n        }\n      `}</style>\n\n      <div className=\"hp-container\">\n        <div \n          className=\"hp-bar\"\n          style={{\n            width: `${((current + 1) / total) * 100}%`,\n          }}\n        />\n      </div>\n    </>\n  );\n}\n
+// src/components/hero/HeroProgress.jsx
+// Progress bar showing current slide position
+
+export default function HeroProgress({ current, total, isHovered }) {
+  return (
+    <>
+      <style>{`
+        .hp-container {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          height: 3px;
+          background: rgba(255,255,255,0.1);
+          z-index: 4;
+        }
+        .hp-bar {
+          height: 100%;
+          background: linear-gradient(90deg, #16a34a, #4ade80);
+          transition: width 0.3s ease;
+          box-shadow: 0 0 10px rgba(22, 163, 74, 0.5);
+        }
+      `}</style>
+
+      <div className="hp-container">
+        <div 
+          className="hp-bar"
+          style={{
+            width: `${((current + 1) / total) * 100}%`,
+          }}
+        />
+      </div>
+    </>
+  );
+}

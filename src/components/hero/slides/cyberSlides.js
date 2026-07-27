@@ -1,1 +1,91 @@
-// src/components/hero/slides/cyberSlides.js\n// Cyber Division hero carousel slides\n\nexport const cyberSlides = [\n  {\n    id: \"cyber-main\",\n    image: \"https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop\",\n    title: \"WeberTech Cyber\",\n    subtitle: \"Documents, Government Services & Printing — All in One Place\",\n    description: \"Your complete digital services hub. From legal documents to government services, printing, and professional writing.\",\n    features: [\"Legal Documents\", \"Government Services\", \"Printing Services\", \"Professional Writing\"],\n    cta: {\n      primary: { label: \"Browse Legal Documents\", href: \"/cyber/legal-documents\" },\n      secondary: { label: \"Explore Services\", href: \"/cyber/government\" },\n    },\n  },\n  {\n    id: \"cyber-government\",\n    image: \"https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop\",\n    title: \"Government Services\",\n    subtitle: \"Fast-track your applications with expert assistance\",\n    description: \"We handle KRA, NTSA, HELB, SHA, eCitizen, Passport, and Business Registration services.\",\n    features: [\"KRA PIN\", \"NTSA Transfer\", \"HELB\", \"SHA\", \"eCitizen\", \"Passport\"],\n    cta: {\n      primary: { label: \"Explore Government Services\", href: \"/cyber/government\" },\n      secondary: { label: \"Learn More\", href: \"/cyber\" },\n    },\n  },\n  {\n    id: \"cyber-business\",\n    image: \"https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop\",\n    title: \"Business Registration\",\n    subtitle: \"Register your business with expert guidance\",\n    description: \"Business Names, Limited Companies, NGOs, CBOs, AGPO, Tax Compliance, and Tender Assistance.\",\n    features: [\"Business Names\", \"Limited Companies\", \"NGOs & CBOs\", \"AGPO\", \"Tax Compliance\", \"Tenders\"],\n    cta: {\n      primary: { label: \"Register Business\", href: \"/cyber/business\" },\n      secondary: { label: \"View Services\", href: \"/cyber\" },\n    },\n  },\n  {\n    id: \"cyber-documents\",\n    image: \"https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop\",\n    title: \"Legal Documents Marketplace\",\n    subtitle: \"Professional templates for every situation\",\n    description: \"Car Sale Agreements, Rental Agreements, Employment Contracts, Loan Agreements, and more. Instant downloads.\",\n    features: [\"Car Sale Agreements\", \"Rental Agreements\", \"Employment Contracts\", \"Loan Agreements\", \"Business Templates\", \"Instant Download\"],\n    cta: {\n      primary: { label: \"Browse Documents\", href: \"/cyber/legal-documents\" },\n      secondary: { label: \"View Pricing\", href: \"/cyber/legal-documents\" },\n    },\n  },\n  {\n    id: \"cyber-printing\",\n    image: \"https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop\",\n    title: \"Printing & Document Centre\",\n    subtitle: \"Professional printing and document services\",\n    description: \"Colour Printing, Black & White, Scanning, Binding, Lamination, Passport Photos, and Typing services.\",\n    features: [\"Colour Printing\", \"Black & White\", \"Scanning\", \"Binding\", \"Lamination\", \"Passport Photos\"],\n    cta: {\n      primary: { label: \"Printing Services\", href: \"/cyber/printing\" },\n      secondary: { label: \"Get Quote\", href: \"/cyber/printing\" },\n    },\n  },\n  {\n    id: \"cyber-writing\",\n    image: \"https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop\",\n    title: \"Professional Writing\",\n    subtitle: \"Expert writing for your success\",\n    description: \"CV Writing, Business Plans, Proposal Writing, Reports, Assignments, and Research Editing.\",\n    features: [\"CV Writing\", \"Business Plans\", \"Proposals\", \"Reports\", \"Assignments\", \"Research Editing\"],\n    cta: {\n      primary: { label: \"Writing Services\", href: \"/cyber/writing\" },\n      secondary: { label: \"View Samples\", href: \"/cyber/writing\" },\n    },\n  },\n  {\n    id: \"cyber-ai\",\n    image: \"https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop\",\n    title: \"AI Document Tools\",\n    subtitle: \"Powered by artificial intelligence\",\n    description: \"AI CV Builder, Proposal Generator, Contract Generator, Letter Generator, and Business Plan Generator.\",\n    features: [\"AI CV Builder\", \"Proposal Generator\", \"Contract Generator\", \"Letter Generator\", \"Business Plan AI\"],\n    cta: {\n      primary: { label: \"Explore AI Tools\", href: \"/cyber\" },\n      secondary: { label: \"Try Demo\", href: \"/cyber\" },\n    },\n  },\n];\n\nexport default cyberSlides;\n
+// src/components/hero/slides/cyberSlides.js
+// Cyber Division hero carousel slides
+
+export const cyberSlides = [
+  {
+    id: "cyber-main",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop",
+    title: "WeberTech Cyber",
+    subtitle: "Documents, Government Services & Printing — All in One Place",
+    description: "Your complete digital services hub. From legal documents to government services, printing, and professional writing.",
+    features: ["Legal Documents", "Government Services", "Printing Services", "Professional Writing"],
+    cta: {
+      primary: { label: "Browse Legal Documents", href: "/cyber/legal-documents" },
+      secondary: { label: "Explore Services", href: "/cyber/government" },
+    },
+  },
+  {
+    id: "cyber-government",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop",
+    title: "Government Services",
+    subtitle: "Fast-track your applications with expert assistance",
+    description: "We handle KRA, NTSA, HELB, SHA, eCitizen, Passport, and Business Registration services.",
+    features: ["KRA PIN", "NTSA Transfer", "HELB", "SHA", "eCitizen", "Passport"],
+    cta: {
+      primary: { label: "Explore Government Services", href: "/cyber/government" },
+      secondary: { label: "Learn More", href: "/cyber" },
+    },
+  },
+  {
+    id: "cyber-business",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop",
+    title: "Business Registration",
+    subtitle: "Register your business with expert guidance",
+    description: "Business Names, Limited Companies, NGOs, CBOs, AGPO, Tax Compliance, and Tender Assistance.",
+    features: ["Business Names", "Limited Companies", "NGOs & CBOs", "AGPO", "Tax Compliance", "Tenders"],
+    cta: {
+      primary: { label: "Register Business", href: "/cyber/business" },
+      secondary: { label: "View Services", href: "/cyber" },
+    },
+  },
+  {
+    id: "cyber-documents",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop",
+    title: "Legal Documents Marketplace",
+    subtitle: "Professional templates for every situation",
+    description: "Car Sale Agreements, Rental Agreements, Employment Contracts, Loan Agreements, and more. Instant downloads.",
+    features: ["Car Sale Agreements", "Rental Agreements", "Employment Contracts", "Loan Agreements", "Business Templates", "Instant Download"],
+    cta: {
+      primary: { label: "Browse Documents", href: "/cyber/legal-documents" },
+      secondary: { label: "View Pricing", href: "/cyber/legal-documents" },
+    },
+  },
+  {
+    id: "cyber-printing",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop",
+    title: "Printing & Document Centre",
+    subtitle: "Professional printing and document services",
+    description: "Colour Printing, Black & White, Scanning, Binding, Lamination, Passport Photos, and Typing services.",
+    features: ["Colour Printing", "Black & White", "Scanning", "Binding", "Lamination", "Passport Photos"],
+    cta: {
+      primary: { label: "Printing Services", href: "/cyber/printing" },
+      secondary: { label: "Get Quote", href: "/cyber/printing" },
+    },
+  },
+  {
+    id: "cyber-writing",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop",
+    title: "Professional Writing",
+    subtitle: "Expert writing for your success",
+    description: "CV Writing, Business Plans, Proposal Writing, Reports, Assignments, and Research Editing.",
+    features: ["CV Writing", "Business Plans", "Proposals", "Reports", "Assignments", "Research Editing"],
+    cta: {
+      primary: { label: "Writing Services", href: "/cyber/writing" },
+      secondary: { label: "View Samples", href: "/cyber/writing" },
+    },
+  },
+  {
+    id: "cyber-ai",
+    image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1600&h=900&fit=crop",
+    title: "AI Document Tools",
+    subtitle: "Powered by artificial intelligence",
+    description: "AI CV Builder, Proposal Generator, Contract Generator, Letter Generator, and Business Plan Generator.",
+    features: ["AI CV Builder", "Proposal Generator", "Contract Generator", "Letter Generator", "Business Plan AI"],
+    cta: {
+      primary: { label: "Explore AI Tools", href: "/cyber" },
+      secondary: { label: "Try Demo", href: "/cyber" },
+    },
+  },
+];
+
+export default cyberSlides;

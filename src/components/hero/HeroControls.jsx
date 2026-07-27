@@ -1,1 +1,105 @@
-// src/components/hero/HeroControls.jsx\n// Navigation controls: prev/next buttons and dot indicators\n\nexport default function HeroControls({ onPrev, onNext, onDotClick, currentSlide, totalSlides }) {\n  return (\n    <>\n      <style>{`\n        .hc-controls {\n          position: absolute;\n          bottom: 20px;\n          left: 50%;\n          transform: translateX(-50%);\n          display: flex;\n          align-items: center;\n          gap: 16px;\n          z-index: 4;\n        }\n        @media (max-width: 768px) {\n          .hc-controls { bottom: 12px; gap: 12px; }\n        }\n        .hc-btn {\n          width: 44px;\n          height: 44px;\n          border-radius: 50%;\n          background: rgba(0,0,0,0.5);\n          border: 1.5px solid rgba(255,255,255,0.3);\n          color: #fff;\n          cursor: pointer;\n          display: flex;\n          align-items: center;\n          justify-content: center;\n          font-size: 18px;\n          transition: all 0.2s;\n          backdrop-filter: blur(10px);\n        }\n        .hc-btn:hover {\n          background: rgba(0,0,0,0.7);\n          border-color: rgba(255,255,255,0.5);\n          transform: scale(1.05);\n        }\n        .hc-dots {\n          display: flex;\n          gap: 8px;\n          align-items: center;\n        }\n        .hc-dot {\n          width: 10px;\n          height: 10px;\n          border-radius: 50%;\n          background: rgba(255,255,255,0.3);\n          border: 1.5px solid rgba(255,255,255,0.4);\n          cursor: pointer;\n          transition: all 0.2s;\n        }\n        .hc-dot:hover {\n          background: rgba(255,255,255,0.5);\n          transform: scale(1.1);\n        }\n        .hc-dot.active {\n          background: #16a34a;\n          border-color: #16a34a;\n          width: 28px;\n          border-radius: 6px;\n        }\n        @media (max-width: 640px) {\n          .hc-btn { width: 36px; height: 36px; font-size: 16px; }\n          .hc-dot { width: 8px; height: 8px; }\n          .hc-dot.active { width: 24px; }\n        }\n      `}</style>\n\n      <div className=\"hc-controls\">\n        <button \n          className=\"hc-btn\"\n          onClick={onPrev}\n          aria-label=\"Previous slide\"\n          title=\"Previous\"\n        >\n          ‹\n        </button>\n\n        <div className=\"hc-dots\">\n          {Array.from({ length: totalSlides }).map((_, idx) => (\n            <button\n              key={idx}\n              className={`hc-dot ${idx === currentSlide ? \"active\" : \"\"}`}\n              onClick={() => onDotClick(idx)}\n              aria-label={`Go to slide ${idx + 1}`}\n              aria-current={idx === currentSlide ? \"true\" : \"false\"}\n            />\n          ))}\n        </div>\n\n        <button \n          className=\"hc-btn\"\n          onClick={onNext}\n          aria-label=\"Next slide\"\n          title=\"Next\"\n        >\n          ›\n        </button>\n      </div>\n    </>\n  );\n}\n
+// src/components/hero/HeroControls.jsx
+// Navigation controls: prev/next buttons and dot indicators
+
+export default function HeroControls({ onPrev, onNext, onDotClick, currentSlide, totalSlides }) {
+  return (
+    <>
+      <style>{`
+        .hc-controls {
+          position: absolute;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          z-index: 4;
+        }
+        @media (max-width: 768px) {
+          .hc-controls { bottom: 12px; gap: 12px; }
+        }
+        .hc-btn {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          background: rgba(0,0,0,0.5);
+          border: 1.5px solid rgba(255,255,255,0.3);
+          color: #fff;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          transition: all 0.2s;
+          backdrop-filter: blur(10px);
+        }
+        .hc-btn:hover {
+          background: rgba(0,0,0,0.7);
+          border-color: rgba(255,255,255,0.5);
+          transform: scale(1.05);
+        }
+        .hc-dots {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .hc-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.3);
+          border: 1.5px solid rgba(255,255,255,0.4);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .hc-dot:hover {
+          background: rgba(255,255,255,0.5);
+          transform: scale(1.1);
+        }
+        .hc-dot.active {
+          background: #16a34a;
+          border-color: #16a34a;
+          width: 28px;
+          border-radius: 6px;
+        }
+        @media (max-width: 640px) {
+          .hc-btn { width: 36px; height: 36px; font-size: 16px; }
+          .hc-dot { width: 8px; height: 8px; }
+          .hc-dot.active { width: 24px; }
+        }
+      `}</style>
+
+      <div className="hc-controls">
+        <button 
+          className="hc-btn"
+          onClick={onPrev}
+          aria-label="Previous slide"
+          title="Previous"
+        >
+          ‹
+        </button>
+
+        <div className="hc-dots">
+          {Array.from({ length: totalSlides }).map((_, idx) => (
+            <button
+              key={idx}
+              className={`hc-dot ${idx === currentSlide ? "active" : ""}`}
+              onClick={() => onDotClick(idx)}
+              aria-label={`Go to slide ${idx + 1}`}
+              aria-current={idx === currentSlide ? "true" : "false"}
+            />
+          ))}
+        </div>
+
+        <button 
+          className="hc-btn"
+          onClick={onNext}
+          aria-label="Next slide"
+          title="Next"
+        >
+          ›
+        </button>
+      </div>
+    </>
+  );
+}
