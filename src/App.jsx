@@ -33,7 +33,7 @@ import Admin       from "./pages/Admin";
 import AdminEnhanced from "./pages/AdminEnhanced";
 import CommandCenter from "./pages/CommandCenter";
 import AdminShowcase from "./pages/AdminShowcase";
-import UnifiedControlCenterFixed from "./pages/UnifiedControlCenterFixed";
+import UnifiedControlCenterV3 from "./pages/UnifiedControlCenterV3";
 const UnifiedControlCenter = UnifiedControlCenterFixed;
 import NotFound    from "./pages/NotFound";
 import ChatWidget from "./pages/ChatWidgetV2";
