@@ -1,32 +1,38 @@
 // ─────────────────────────────────────────────────────────────────
 //  WeberTech — api/payments/nestlink-webhook.js
 //  POST /api/payments/nestlink-webhook
-//  Register THIS URL as the callback/webhook URL on your NestLink
-//  payment link (Links → your link → Webhook / Callback URL):
-//    https://webertech.co.ke/api/payments/nestlink-webhook
-//
-//  NestLink sends: { api_key, local_id, paid, result_code, result:{...} }
-//  We match api_key against NESTLINK_API_KEY to confirm authenticity,
-//  then use local_id as our Firestore orders/{orderId} doc id.
 // ─────────────────────────────────────────────────────────────────
-const { markOrderPaid, markOrderFailed } = require("../_lib/orders");
+
+const sendJson = (res, status, data) => {
+  res.setHeader("Content-Type", "application/json");
+  res.status(status).json(data);
+};
 
 module.exports = async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
+    const { markOrderPaid, markOrderFailed } = require("../_lib/orders");
+
+    if (req.method !== "POST") {
+      return sendJson(res, 405, { error: "Method not allowed" });
+    }
+
     const body = req.body || {};
     const { api_key, local_id, paid, result_code, result } = body;
 
     if (!local_id) {
-      console.warn("NestLink webhook missing local_id:", JSON.stringify(body));
-      return res.status(200).json({ received: true }); // ack anyway, nothing to process
+      console.warn("[NestLink Webhook] Missing local_id:", body);
+      return sendJson(res, 200, { received: true, note: "missing local_id" });
     }
 
-    // Verify this webhook really came from our own NestLink link
+    // Authenticity check
     if (process.env.NESTLINK_API_KEY && api_key && api_key !== process.env.NESTLINK_API_KEY) {
-      console.warn("NestLink webhook api_key mismatch for order:", local_id);
-      return res.status(200).json({ received: true }); // still 200 so NestLink doesn't retry forever
+      console.warn(`[NestLink Webhook] Auth mismatch for order: ${local_id}`);
+      return sendJson(res, 200, { received: true, note: "auth mismatch" });
     }
 
     if (paid === true && result_code === 0) {
@@ -35,16 +41,18 @@ module.exports = async function handler(req, res) {
         rawPayload: body,
         method: "nestlink",
       });
-      console.log(`✅ NestLink payment confirmed for order ${local_id}`);
+      console.log(`[NestLink Webhook] ✅ Confirmed: ${local_id}`);
     } else {
-      await markOrderFailed(local_id, result?.msg || `NestLink result_code ${result_code}`);
-      console.log(`❌ NestLink payment failed for order ${local_id}`);
+      const failReason = result?.msg || `NestLink result_code ${result_code}`;
+      await markOrderFailed(local_id, failReason);
+      console.log(`[NestLink Webhook] ❌ Failed: ${local_id} | Reason: ${failReason}`);
     }
 
-    return res.status(200).json({ received: true });
+    return sendJson(res, 200, { received: true });
+
   } catch (err) {
-    console.error("nestlink-webhook error:", err);
-    // Still 200 — we don't want NestLink hammering retries on our bug
-    return res.status(200).json({ received: true });
+    console.error("[NestLink Webhook] CRITICAL ERROR:", err);
+    // Always 200 to NestLink to prevent retry loops
+    return sendJson(res, 200, { received: true, error: err.message });
   }
 };
