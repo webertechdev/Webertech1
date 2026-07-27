@@ -33,6 +33,7 @@ import Admin       from "./pages/Admin";
 import AdminEnhanced from "./pages/AdminEnhanced";
 import CommandCenter from "./pages/CommandCenter";
 import AdminShowcase from "./pages/AdminShowcase";
+import AdminControlCenter from "./pages/AdminControlCenter";
 import NotFound    from "./pages/NotFound";
 import ChatWidget from "./pages/ChatWidgetEnhanced";
 import About from "./pages/About";
@@ -131,6 +132,12 @@ export default function App() {
         } />
 
         <Route path="/admin-showcase" element={<AdminShowcase />} />
+
+        <Route path="/admin-control" element={
+          <AdminOnly user={user} isAdmin={isAdmin} loading={loading}>
+            <AdminControlCenter />
+          </AdminOnly>
+        } />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
