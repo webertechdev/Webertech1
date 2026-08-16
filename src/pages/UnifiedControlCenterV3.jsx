@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
-import { db, storage, firebaseRuntime } from "../config/firebase";
+import { auth, db, storage, firebaseRuntime } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -310,6 +310,7 @@ export default function UnifiedControlCenterV3() {
   const [whatsappMessage, setWhatsappMessage] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [adminReply, setAdminReply] = useState("");
@@ -550,7 +551,7 @@ export default function UnifiedControlCenterV3() {
     setEmailSubject(`${collectionInfo.label} enquiry — WeberTech`);
   };
 
-  const sendContact = () => {
+  const sendContact = async () => {
     if (!contactModal?.record) return;
     const { record, collectionInfo, channel } = contactModal;
 
@@ -560,9 +561,45 @@ export default function UnifiedControlCenterV3() {
         toast.error("No email address available for this contact.");
         return;
       }
-      const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(whatsappMessage)}`;
-      window.location.href = mailto;
-      toast.success("📧 Opening your email application...");
+      if (!emailSubject.trim() || !whatsappMessage.trim()) {
+        toast.error("Add both a subject and message before sending.");
+        return;
+      }
+      if (!auth.currentUser) {
+        toast.error("Your administrator session has expired. Sign in again.");
+        return;
+      }
+
+      setIsSendingEmail(true);
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const response = await fetch("/api/send-email", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            recipient: email,
+            subject: emailSubject.trim(),
+            message: whatsappMessage.trim(),
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || "The email could not be sent.");
+        }
+
+        await handleInboxStatus(collectionInfo.id, record.id, "contacted");
+        toast.success("✅ Email sent successfully.");
+        setContactModal(null);
+      } catch (error) {
+        console.error("Direct email send error:", error);
+        toast.error(error.message || "The email could not be sent. The request was not marked as contacted.");
+      } finally {
+        setIsSendingEmail(false);
+      }
+      return;
     } else {
       const rawPhone = record.phone || record.phoneNumber || record.mobile;
       if (!rawPhone) {
@@ -965,14 +1002,15 @@ export default function UnifiedControlCenterV3() {
 
       {/* WhatsApp / Email Contact Modal */}
       {contactModal && (
-        <div className="uc-modal-overlay" onClick={() => !isGenerating && setContactModal(null)}>
+        <div className="uc-modal-overlay" onClick={() => !isGenerating && !isSendingEmail && setContactModal(null)}>
           <div className="uc-modal" onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <h3 style={{ color: "#fff", margin: 0 }}>
                 {contactModal.channel === "email" ? "📧 Contact via Email" : "💬 Contact via WhatsApp"}
               </h3>
               <button
-                onClick={() => setContactModal(null)}
+                onClick={() => !isGenerating && !isSendingEmail && setContactModal(null)}
+                disabled={isGenerating || isSendingEmail}
                 style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", fontSize: 20 }}
               >✕</button>
             </div>
@@ -1025,14 +1063,15 @@ export default function UnifiedControlCenterV3() {
                 className="uc-btn"
                 style={{ flex: 1, background: contactModal.channel === "email" ? "#2563eb" : "#25d366" }}
                 onClick={sendContact}
-                disabled={isGenerating}
+                disabled={isGenerating || isSendingEmail}
               >
-                {contactModal.channel === "email" ? "Open Email Composer" : "Open WhatsApp"}
+                {contactModal.channel === "email" ? (isSendingEmail ? "Sending..." : "Send Email") : "Open WhatsApp"}
               </button>
               <button
                 className="uc-btn"
                 style={{ background: "#475569" }}
-                onClick={() => setContactModal(null)}
+                onClick={() => !isGenerating && !isSendingEmail && setContactModal(null)}
+                disabled={isGenerating || isSendingEmail}
               >
                 Cancel
               </button>
