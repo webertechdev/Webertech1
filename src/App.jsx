@@ -11,13 +11,13 @@ import { auth, db }            from "./config/firebase";
 
 // Pages — all in src/pages/
 import Home        from "./pages/Home";
-import Academy     from "./pages/Academy";
-import Electronics from "./pages/Electronics";
-import Cyber         from "./pages/Cyber";
+import Academy     from "./pages/StubPage";
+import Electronics from "./pages/StubPage";
+import Cyber         from "./pages/StubPage";
 import CyberHomeEnhanced from "./pages/cyber/CyberHomeEnhanced";
-import CyberHome           from "./pages/cyber/CyberHome";
-import LegalDocuments      from "./pages/cyber/LegalDocuments";
-import LegalDocumentDetail from "./pages/cyber/LegalDocumentDetail";
+import CyberHome           from "./pages/StubPage";
+import LegalDocuments      from "./pages/StubPage";
+import LegalDocumentDetail from "./pages/StubPage";
 import Government from "./pages/cyber/Government";
 import Business from "./pages/cyber/Business";
 import Printing from "./pages/cyber/Printing";
@@ -25,21 +25,20 @@ import Writing from "./pages/cyber/Writing";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
-import Dev         from "./pages/Dev";
-import Hustle      from "./pages/Hustle";
-import Dashboard   from "./pages/Dashboard";
+import Dev         from "./pages/StubPage";
+import Hustle      from "./pages/StubPage";
+import Dashboard   from "./pages/StubPage";
 import DashboardV3 from "./pages/DashboardV3";
-import Admin       from "./pages/Admin";
+import Admin       from "./pages/StubPage";
 import AdminEnhanced from "./pages/AdminEnhanced";
 import CommandCenter from "./pages/CommandCenter";
 import AdminShowcase from "./pages/AdminShowcase";
-import UnifiedControlCenterV3 from "./pages/UnifiedControlCenterV3";
-const UnifiedControlCenter = UnifiedControlCenterV3;
-import NotFound    from "./pages/NotFound";
+import UnifiedControlCenter from "./pages/UnifiedControlCenterV3";
+import NotFound    from "./pages/StubPage";
 import ChatWidget from "./pages/ChatWidgetEnhanced";
-import About from "./pages/About";
-import Privacy from "./pages/Privacy";
-import Terms from "./pages/Terms";
+import About from "./pages/StubPage";
+import Privacy from "./pages/StubPage";
+import Terms from "./pages/StubPage";
 
 // ── Route guards ────────────────────────────────────────────────
 function Protected({ user, loading, children }) {

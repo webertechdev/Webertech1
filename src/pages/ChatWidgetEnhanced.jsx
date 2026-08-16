@@ -285,7 +285,27 @@ export default function ChatWidgetEnhanced() {
                 </div>
               </div>
             </div>
-            <button onClick={closeChat} style={{ background:"rgba(255,255,255,0.18)", border:"none", borderRadius:7, width:28, height:28, cursor:"pointer", color:"#fff" }}>✕</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                value={lang}
+                onChange={e => setLang(e.target.value)}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  background: "rgba(255,255,255,0.2)",
+                  color: "#fff",
+                  outline: "none"
+                }}
+              >
+                <option value="en" style={{ color: "#000" }}>EN</option>
+                <option value="sw" style={{ color: "#000" }}>SW</option>
+              </select>
+              <button onClick={closeChat} style={{ background:"rgba(255,255,255,0.18)", border:"none", borderRadius:7, width:28, height:28, cursor:"pointer", color:"#fff" }}>✕</button>
+            </div>
           </div>
 
           <div className="wt-msgs">
