@@ -17,6 +17,22 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+// Keep a non-sensitive runtime diagnostic available to the UI. This prevents a
+// missing Vercel environment variable from presenting as an upload that never
+// starts. Secret values are never exposed here.
+export const firebaseRuntime = {
+  projectId: firebaseConfig.projectId || "",
+  storageBucket: firebaseConfig.storageBucket || "",
+  missing: [
+    ["VITE_FIREBASE_API_KEY", firebaseConfig.apiKey],
+    ["VITE_FIREBASE_AUTH_DOMAIN", firebaseConfig.authDomain],
+    ["VITE_FIREBASE_PROJECT_ID", firebaseConfig.projectId],
+    ["VITE_FIREBASE_STORAGE_BUCKET", firebaseConfig.storageBucket],
+    ["VITE_FIREBASE_MESSAGING_SENDER_ID", firebaseConfig.messagingSenderId],
+    ["VITE_FIREBASE_APP_ID", firebaseConfig.appId],
+  ].filter(([, value]) => !value).map(([key]) => key),
+};
+
 // Prevent duplicate app init on hot reload
 const app = getApps().length === 0
   ? initializeApp(firebaseConfig)

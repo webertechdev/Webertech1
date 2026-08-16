@@ -3,8 +3,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
-import { db, storage } from "../config/firebase";
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import { db, storage, firebaseRuntime } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -44,6 +44,7 @@ export default function UnifiedControlCenterV3() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+  const [storageDiagnostic, setStorageDiagnostic] = useState("");
   const [documents, setDocuments] = useState([]);
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
@@ -155,6 +156,13 @@ export default function UnifiedControlCenterV3() {
 
   useEffect(() => {
     refreshData();
+    if (firebaseRuntime.missing.length > 0) {
+      setStorageDiagnostic(
+        `Firebase configuration is incomplete. Missing: ${firebaseRuntime.missing.join(", ")}.`
+      );
+    } else if (!firebaseRuntime.storageBucket) {
+      setStorageDiagnostic("Firebase Storage bucket is not configured for this deployment.");
+    }
   }, []);
 
   // Load chat messages
@@ -198,36 +206,80 @@ export default function UnifiedControlCenterV3() {
       return;
     }
 
+    if (firebaseRuntime.missing.length > 0) {
+      const message = `Firebase configuration is incomplete. Missing: ${firebaseRuntime.missing.join(", ")}.`;
+      setUploadError(message);
+      toast.error(message);
+      e.target.value = "";
+      return;
+    }
+    if (!firebaseRuntime.storageBucket) {
+      const message = "Firebase Storage bucket is not configured for this deployment.";
+      setUploadError(message);
+      toast.error(message);
+      e.target.value = "";
+      return;
+    }
+
     setUploading(true);
     setUploadError("");
+    setStorageDiagnostic("");
     setUploadProgress(0);
     const toastId = toast.loading("📤 Uploading file... 0%");
     let uploadTask;
+    let resumableError;
 
     try {
       console.log("📤 Starting upload:", file.name, file.size, "bytes");
       const storageRef = ref(storage, `documents/${Date.now()}_${file.name}`);
+      const metadata = {
+        contentType: file.type || "application/octet-stream",
+        cacheControl: "public,max-age=3600",
+      };
+      let startTimer;
       const uploadPromise = new Promise((resolve, reject) => {
-        uploadTask = uploadBytesResumable(storageRef, file, {
-          contentType: file.type || "application/octet-stream",
-        });
+        uploadTask = uploadBytesResumable(storageRef, file, metadata);
+        startTimer = setTimeout(() => {
+          uploadTask?.cancel?.();
+          reject(new Error("Firebase Storage did not start after 20 seconds. Check the Storage bucket and rules."));
+        }, 20000);
         uploadTask.on(
           "state_changed",
           snapshot => {
+            clearTimeout(startTimer);
             const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
             setUploadProgress(progress);
             toast.loading(`📤 Uploading file... ${progress}%`, { id: toastId });
           },
-          reject,
-          () => resolve(uploadTask.snapshot)
+          error => {
+            clearTimeout(startTimer);
+            reject(error);
+          },
+          () => {
+            clearTimeout(startTimer);
+            resolve(uploadTask.snapshot);
+          }
         );
       });
 
-      const snapshot = await withTimeout(
-        uploadPromise,
-        120000,
-        "File upload timed out. Check your connection and try again."
-      );
+      let snapshot;
+      try {
+        snapshot = await withTimeout(
+          uploadPromise,
+          120000,
+          "File upload timed out. Check your connection and try again."
+        );
+      } catch (err) {
+        resumableError = err;
+        console.warn("Resumable upload failed; trying one-shot upload:", err);
+        toast.loading("📤 Retrying direct upload...", { id: toastId });
+        setUploadProgress(0);
+        snapshot = await withTimeout(
+          uploadBytes(storageRef, file, metadata),
+          30000,
+          "Direct upload timed out. Verify Firebase Storage is enabled and try again."
+        );
+      }
       const fileUrl = await withTimeout(
         getDownloadURL(snapshot.ref),
         15000,
@@ -240,8 +292,13 @@ export default function UnifiedControlCenterV3() {
     } catch (err) {
       uploadTask?.cancel?.();
       console.error("Upload error:", err);
-      const message = err?.message || "Unable to upload the file.";
+      const message = err?.message || resumableError?.message || "Unable to upload the file.";
       setUploadError(message);
+      setStorageDiagnostic(
+        message.includes("Storage") || message.includes("bucket")
+          ? "Upload could not reach Firebase Storage. Verify the Vercel Storage bucket environment variable and Firebase Storage Rules."
+          : "Upload failed before the file could be saved."
+      );
       toast.error(`Upload failed: ${message}`, { id: toastId });
     } finally {
       setUploading(false);
@@ -474,6 +531,11 @@ export default function UnifiedControlCenterV3() {
               {loading ? "⟳ Refreshing..." : "🔄 Refresh"}
             </button>
           </div>
+          {storageDiagnostic && (
+            <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(220,38,38,0.16)", border: "1px solid rgba(252,165,165,0.55)", color: "#fecaca", fontSize: 13 }}>
+              ⚠️ {storageDiagnostic}
+            </div>
+          )}
         </div>
 
         <div className="uc-layout">
