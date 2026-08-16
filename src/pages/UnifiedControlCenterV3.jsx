@@ -235,7 +235,10 @@ function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refr
                             </select>
                           </td>
                           <td style={{ padding: "12px 8px" }}>
-                            <button className="uc-btn uc-btn-danger" style={{ padding: "6px 9px", fontSize: 11 }} onClick={() => handleDeleteInboxItem(collectionInfo.id, record.id)} disabled={loading}>Delete</button>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button className="uc-btn" style={{ padding: "6px 9px", fontSize: 11, background: "#25d366" }} onClick={() => openContactModal(record, collectionInfo)} disabled={loading}>WhatsApp</button>
+                              <button className="uc-btn uc-btn-danger" style={{ padding: "6px 9px", fontSize: 11 }} onClick={() => handleDeleteInboxItem(collectionInfo.id, record.id)} disabled={loading}>Delete</button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -300,6 +303,9 @@ export default function UnifiedControlCenterV3() {
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxFilter, setInboxFilter] = useState("all");
   const [inboxViewMode, setInboxViewMode] = useState("cards");
+  const [contactModal, setContactModal] = useState(null);
+  const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [adminReply, setAdminReply] = useState("");
@@ -394,10 +400,10 @@ export default function UnifiedControlCenterV3() {
           const timestamp = c.updatedAt?.toMillis?.() || c.createdAt?.toMillis?.() || 0;
           return timestamp > sevenDaysAgo;
         });
-      
+
       const activeChatsCount = allChats.filter(c => c.status === "active" || (c.lastMessage && !c.resolved)).length;
       console.log("✅ Chats loaded:", allChats.length, "Active:", activeChatsCount);
-      
+
       setChats(allChats);
 
       // Refresh waitlists, enquiries, and generated reports using the same
@@ -486,6 +492,61 @@ export default function UnifiedControlCenterV3() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const generateAiWhatsappMessage = async (record, collectionInfo) => {
+    setIsGenerating(true);
+    try {
+      const customerName = inboxCustomerName(record);
+      const message = inboxMessage(record);
+      const service = collectionInfo.label;
+
+      // Call the existing chat API to generate a professional reply
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `Draft a professional, friendly WhatsApp reply to ${customerName} who inquired about ${service}. Their message was: "${message}". Keep it concise, mention WeberTech, and ask how we can help further. Do not include any placeholder brackets.`,
+          history: [],
+          systemPrompt: "You are a professional customer service assistant for WeberTech Kenya. Draft a concise, helpful WhatsApp reply. No emojis except one at the end."
+        })
+      });
+
+      if (!response.ok) throw new Error("AI generation failed");
+      const data = await response.json();
+      setWhatsappMessage(data.reply || "");
+      toast.success("✨ AI reply generated!");
+    } catch (err) {
+      console.error("AI Gen error:", err);
+      // Fallback to template if API fails
+      const fallback = `Hello ${inboxCustomerName(record)}, this is WeberTech regarding your ${collectionInfo.label} inquiry. How can we assist you today?`;
+      setWhatsappMessage(fallback);
+      toast.error("AI generation failed. Used template instead.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const openContactModal = (record, collectionInfo) => {
+    setContactModal({ record, collectionInfo });
+    setWhatsappMessage(`Hello ${inboxCustomerName(record)}, this is WeberTech. We received your inquiry regarding ${collectionInfo.label}. How can we help you today?`);
+  };
+
+  const sendWhatsapp = () => {
+    if (!contactModal?.record?.phone && !contactModal?.record?.phoneNumber) {
+      toast.error("No phone number available for this contact.");
+      return;
+    }
+    const rawPhone = contactModal.record.phone || contactModal.record.phoneNumber;
+    // Clean phone number: remove non-digits, ensure it starts with 254
+    let cleanPhone = rawPhone.replace(/\D/g, "");
+    if (cleanPhone.startsWith("0")) cleanPhone = "254" + cleanPhone.substring(1);
+    if (!cleanPhone.startsWith("254")) cleanPhone = "254" + cleanPhone;
+
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappMessage)}`;
+    window.open(url, "_blank");
+    setContactModal(null);
+    toast.success("🚀 Opening WhatsApp...");
   };
 
   useEffect(() => {
@@ -667,10 +728,10 @@ export default function UnifiedControlCenterV3() {
 
     try {
       console.log("💾 Adding document:", newDoc.title);
-      
+
       const slug = newDoc.title.toLowerCase().replace(/\s+/g, "-");
       const docRef = doc(collection(db, "products"));
-      
+
       const docData = {
         title: newDoc.title,
         description: newDoc.description,
@@ -701,7 +762,7 @@ export default function UnifiedControlCenterV3() {
 
       toast.dismiss();
       toast.success("✅ Document added successfully!");
-      
+
       setNewDoc({
         title: "",
         description: "",
@@ -726,12 +787,12 @@ export default function UnifiedControlCenterV3() {
   const handleDeleteDocument = async (docId, fileUrl) => {
     if (!confirm("Delete this document?")) return;
     setLoading(true);
-    
+
     try {
       console.log("🗑️ Deleting document:", docId);
-      
+
       await deleteDoc(doc(db, "products", docId));
-      
+
       if (fileUrl) {
         try {
           const fileRef = ref(storage, fileUrl);
@@ -741,7 +802,7 @@ export default function UnifiedControlCenterV3() {
           console.warn("File deletion skipped:", err);
         }
       }
-      
+
       toast.success("✅ Document deleted!");
       await refreshData();
     } catch (err) {
@@ -759,7 +820,7 @@ export default function UnifiedControlCenterV3() {
 
     try {
       console.log("💾 Saving AI training config");
-      
+
       await setDoc(doc(db, "config", "weberai"), {
         personality: aiTraining.personality,
         language: aiTraining.language,
@@ -769,7 +830,7 @@ export default function UnifiedControlCenterV3() {
         behaviorRules: aiTraining.behaviorRules,
         updatedAt: serverTimestamp(),
       }, { merge: true });
-      
+
       console.log("✅ AI training saved");
       toast.dismiss();
       toast.success("✅ AI Training saved!");
@@ -789,7 +850,7 @@ export default function UnifiedControlCenterV3() {
 
     try {
       const newMsgRef = doc(collection(db, "chats", selectedChat.id, "messages"));
-      
+
       await setDoc(newMsgRef, {
         text: adminReply,
         sender: "admin",
@@ -855,11 +916,73 @@ export default function UnifiedControlCenterV3() {
         .uc-stat-box { background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.3); border-radius: 12px; padding: 20px; text-align: center; }
         .uc-stat-value { font-size: 28px; font-weight: 900; color: #4ade80; }
         .uc-stat-label { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 6px; text-transform: uppercase; }
+        .uc-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(8px); }
+        .uc-modal { background: #1e293b; border: 1px solid #16a34a; border-radius: 20px; width: 100%; max-width: 500px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
         @media (max-width: 1024px) { .uc-layout { grid-template-columns: 1fr; } .uc-sidebar { position: static; } }
       `}</style>
 
       <Toaster position="top-center" />
       <Navbar />
+
+      {/* WhatsApp Contact Modal */}
+      {contactModal && (
+        <div className="uc-modal-overlay" onClick={() => !isGenerating && setContactModal(null)}>
+          <div className="uc-modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h3 style={{ color: "#fff", margin: 0 }}>💬 Contact via WhatsApp</h3>
+              <button
+                onClick={() => setContactModal(null)}
+                style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", fontSize: 20 }}
+              >✕</button>
+            </div>
+
+            <div style={{ background: "rgba(255,255,255,0.05)", padding: 12, borderRadius: 10, marginBottom: 20 }}>
+              <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 13 }}>{inboxCustomerName(contactModal.record)}</div>
+              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, marginTop: 4 }}>
+                {contactModal.record.phone || contactModal.record.phoneNumber || "No phone number"}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700 }}>Message</label>
+                <button
+                  className="uc-btn"
+                  style={{ padding: "4px 10px", fontSize: 10, background: "#7c3aed" }}
+                  onClick={() => generateAiWhatsappMessage(contactModal.record, contactModal.collectionInfo)}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? "✨ Generating..." : "🤖 Draft with AI"}
+                </button>
+              </div>
+              <textarea
+                className="uc-textarea"
+                style={{ minHeight: 150, marginBottom: 0 }}
+                value={whatsappMessage}
+                onChange={e => setWhatsappMessage(e.target.value)}
+                placeholder="Type your message here..."
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                className="uc-btn"
+                style={{ flex: 1, background: "#25d366" }}
+                onClick={sendWhatsapp}
+              >
+                Send to WhatsApp
+              </button>
+              <button
+                className="uc-btn"
+                style={{ background: "#475569" }}
+                onClick={() => setContactModal(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="uc-container">
         <div className="uc-header">
@@ -928,7 +1051,7 @@ export default function UnifiedControlCenterV3() {
               <>
                 <div className="uc-card">
                   <h3 className="uc-card-title">➕ Add New Document</h3>
-                  
+
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                     <div>
                       <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Title *</label>
