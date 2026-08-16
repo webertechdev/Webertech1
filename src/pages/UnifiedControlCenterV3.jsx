@@ -38,6 +38,15 @@ function withTimeout(promise, timeoutMs, message) {
   });
 }
 
+function normalizeHttpUrl(value) {
+  try {
+    const parsed = new URL((value || "").trim());
+    return /^https?:$/.test(parsed.protocol) ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 export default function UnifiedControlCenterV3() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(false);
@@ -318,9 +327,15 @@ export default function UnifiedControlCenterV3() {
       return;
     }
     if (!newDoc.fileUrl) {
-      toast.error("Please upload the document file before adding it.");
+      toast.error("Upload a file or paste a hosted document URL before adding it.");
       return;
     }
+    const fileUrl = normalizeHttpUrl(newDoc.fileUrl);
+    if (!fileUrl) {
+      toast.error("Enter a valid public http:// or https:// document URL.");
+      return;
+    }
+    const fileName = newDoc.fileName || fileUrl.split("/").pop()?.split("?")[0] || "Hosted document";
 
     setLoading(true);
     toast.loading("💾 Adding document...");
@@ -338,8 +353,8 @@ export default function UnifiedControlCenterV3() {
         category: newDoc.category,
         icon: newDoc.icon,
         features: newDoc.features,
-        fileUrl: newDoc.fileUrl,
-        fileName: newDoc.fileName,
+        fileUrl,
+        fileName,
         slug,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -654,7 +669,9 @@ export default function UnifiedControlCenterV3() {
                   <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Upload Document File</label>
                   <div
                     className="uc-file-upload"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      if (!loading && !uploading) fileInputRef.current?.click();
+                    }}
                   >
                     <span style={{ fontSize: 20 }}>📤</span>
                     <div>
@@ -677,6 +694,31 @@ export default function UnifiedControlCenterV3() {
                     accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.gif"
                     disabled={loading || uploading}
                   />
+
+                  <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                    <label style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>
+                      Or use a hosted document URL
+                    </label>
+                    <input
+                      className="uc-input"
+                      type="url"
+                      placeholder="https://your-public-host.com/document.pdf"
+                      value={newDoc.fileUrl}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setNewDoc(prev => ({
+                          ...prev,
+                          fileUrl: value,
+                          fileName: value ? "Hosted document" : "",
+                        }));
+                        setUploadError("");
+                      }}
+                      disabled={loading || uploading}
+                    />
+                    <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, lineHeight: 1.5 }}>
+                      Store the PDF/DOCX in Google Drive, Dropbox, or your own website, enable public access, and paste its direct HTTPS link here. The link must open without login.
+                    </div>
+                  </div>
 
                   <button className="uc-btn" onClick={handleAddDocument} disabled={loading || uploading} style={{ width: "100%", marginTop: 16 }}>
                     {uploading ? "⟳ Uploading..." : loading ? "⟳ Adding..." : "✅ Add Document"}
