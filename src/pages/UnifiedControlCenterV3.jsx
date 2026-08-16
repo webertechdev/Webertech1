@@ -47,6 +47,146 @@ function normalizeHttpUrl(value) {
   }
 }
 
+const INBOX_COLLECTIONS = [
+  { id: "academy_waitlist", label: "Academy Waitlist", icon: "🎓", description: "Learners waiting for Academy courses or mentorship." },
+  { id: "electronics_notify", label: "Electronics Requests", icon: "📺", description: "Customers requesting product availability or stock alerts." },
+  { id: "dev_inquiries", label: "Dev Inquiries", icon: "💼", description: "Website, app, dashboard, and custom-system enquiries." },
+  { id: "cyber_notify", label: "Cyber Requests", icon: "🖥️", description: "Cyber service notifications and customer requests." },
+  { id: "hustle_waitlist", label: "Hustle KE Waitlist", icon: "🔥", description: "Customers interested in Hustle KE opportunities." },
+  { id: "reports", label: "Reports", icon: "📊", description: "Generated platform, chat, and AI training reports." },
+];
+
+const EMPTY_INBOX = INBOX_COLLECTIONS.reduce((result, item) => {
+  result[item.id] = [];
+  return result;
+}, {});
+
+function formatInboxDate(value) {
+  if (!value) return "Date not available";
+  try {
+    const date = value?.toDate ? value.toDate() : new Date(value);
+    return Number.isNaN(date.getTime()) ? "Date not available" : date.toLocaleString();
+  } catch {
+    return "Date not available";
+  }
+}
+
+function displayInboxValue(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") {
+    try { return JSON.stringify(value); } catch { return "[data]"; }
+  }
+  return String(value);
+}
+
+function inboxCustomerName(item) {
+  return item.name || item.fullName || item.customerName || item.firstName || item.email || item.phone || "Anonymous customer";
+}
+
+function inboxMessage(item) {
+  return item.message || item.inquiry || item.request || item.description || item.details || item.summary || item.course || item.product || item.service || "No message supplied";
+}
+
+function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refreshInboxData, handleInboxStatus, handleDeleteInboxItem, loading }) {
+  const visibleCollections = INBOX_COLLECTIONS.filter(item => inboxFilter === "all" || item.id === inboxFilter);
+  const totalRecords = INBOX_COLLECTIONS.reduce((sum, item) => sum + (inboxData[item.id]?.length || 0), 0);
+
+  return (
+    <div className="uc-main">
+      <div className="uc-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <h3 className="uc-card-title" style={{ marginBottom: 6 }}>📥 Customer Requests & Reports</h3>
+            <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, margin: 0 }}>
+              Manage waitlists, notifications, service enquiries, and generated reports from Firestore. Data loads only when you refresh.
+            </p>
+          </div>
+          <button className="uc-refresh-btn" onClick={() => refreshInboxData()} disabled={inboxLoading || loading}>
+            {inboxLoading ? "⟳ Loading..." : "🔄 Refresh requests"}
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 20 }}>
+          <button
+            className={`uc-tab-btn ${inboxFilter === "all" ? "active" : ""}`}
+            onClick={() => setInboxFilter("all")}
+            style={{ width: "auto", margin: 0, padding: "9px 12px", fontSize: 12 }}
+          >
+            All ({totalRecords})
+          </button>
+          {INBOX_COLLECTIONS.map(item => (
+            <button
+              key={item.id}
+              className={`uc-tab-btn ${inboxFilter === item.id ? "active" : ""}`}
+              onClick={() => setInboxFilter(item.id)}
+              style={{ width: "auto", margin: 0, padding: "9px 12px", fontSize: 12 }}
+            >
+              {item.icon} {item.label} ({inboxData[item.id]?.length || 0})
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {visibleCollections.map(collectionInfo => {
+        const records = inboxData[collectionInfo.id] || [];
+        return (
+          <div className="uc-card" key={collectionInfo.id}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+              <div>
+                <h3 className="uc-card-title" style={{ marginBottom: 4 }}>{collectionInfo.icon} {collectionInfo.label} ({records.length})</h3>
+                <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, margin: 0 }}>{collectionInfo.description}</p>
+              </div>
+              <code style={{ color: "#86efac", fontSize: 11 }}>{collectionInfo.id}</code>
+            </div>
+
+            {records.length === 0 ? (
+              <div style={{ padding: "24px 12px", borderRadius: 10, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.5)", textAlign: "center", fontSize: 13 }}>
+                No records in this collection.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {records.map(record => {
+                  const status = record.status || "new";
+                  const isReport = collectionInfo.id === "reports";
+                  const contact = [record.email && `✉ ${record.email}`, record.phone && `☎ ${record.phone}`].filter(Boolean).join(" • ");
+                  const excluded = ["id", "collectionId", "createdAt", "updatedAt", "adminUpdatedAt", "status", "name", "fullName", "customerName", "firstName", "email", "phone", "message", "inquiry", "request", "description", "details", "summary", "course", "product", "service", "title", "reportTitle", "reportType"];
+                  const extraFields = Object.entries(record).filter(([key, value]) => !excluded.includes(key) && value !== null && value !== undefined && typeof value !== "object");
+                  return (
+                    <article key={record.id} style={{ padding: 16, borderRadius: 12, background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.25)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ color: "#4ade80", fontWeight: 800, fontSize: 14 }}>
+                            {isReport ? (record.title || record.reportTitle || record.reportType || "Platform report") : inboxCustomerName(record)}
+                          </div>
+                          {contact && <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, marginTop: 4 }}>{contact}</div>}
+                        </div>
+                        <span style={{ padding: "4px 9px", borderRadius: 99, background: status === "resolved" ? "rgba(34,197,94,.18)" : status === "contacted" ? "rgba(251,191,36,.18)" : "rgba(96,165,250,.18)", color: status === "resolved" ? "#86efac" : status === "contacted" ? "#fde68a" : "#bfdbfe", fontSize: 11, fontWeight: 800, textTransform: "capitalize" }}>{status}</span>
+                      </div>
+                      <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, lineHeight: 1.6, marginTop: 10, whiteSpace: "pre-wrap" }}>{inboxMessage(record)}</div>
+                      <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, marginTop: 8 }}>Received: {formatInboxDate(record.createdAt || record.updatedAt)}</div>
+                      {extraFields.length > 0 && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                          {extraFields.slice(0, 8).map(([key, value]) => <span key={key} style={{ padding: "4px 7px", borderRadius: 6, background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)", fontSize: 11 }}>{key}: {displayInboxValue(value)}</span>)}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+                        <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11 }} onClick={() => handleInboxStatus(collectionInfo.id, record.id, "contacted")} disabled={loading}>Mark contacted</button>
+                        <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11, background: "#2563eb" }} onClick={() => handleInboxStatus(collectionInfo.id, record.id, "resolved")} disabled={loading}>Mark resolved</button>
+                        <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11, background: "#475569" }} onClick={() => handleInboxStatus(collectionInfo.id, record.id, "archived")} disabled={loading}>Archive</button>
+                        <button className="uc-btn uc-btn-danger" style={{ padding: "7px 10px", fontSize: 11 }} onClick={() => handleDeleteInboxItem(collectionInfo.id, record.id)} disabled={loading}>Delete</button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function UnifiedControlCenterV3() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(false);
@@ -56,6 +196,9 @@ export default function UnifiedControlCenterV3() {
   const [storageDiagnostic, setStorageDiagnostic] = useState("");
   const [documents, setDocuments] = useState([]);
   const [chats, setChats] = useState([]);
+  const [inboxData, setInboxData] = useState(EMPTY_INBOX);
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxFilter, setInboxFilter] = useState("all");
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [adminReply, setAdminReply] = useState("");
@@ -86,6 +229,42 @@ export default function UnifiedControlCenterV3() {
   });
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Refresh the admin inbox collections without realtime listeners.
+  const refreshInboxData = async ({ silent = false } = {}) => {
+    setInboxLoading(true);
+    const nextInbox = { ...EMPTY_INBOX };
+    const failures = [];
+
+    await Promise.all(INBOX_COLLECTIONS.map(async ({ id }) => {
+      try {
+        const snap = await withTimeout(
+          getDocs(collection(db, id)),
+          15000,
+          `Loading ${id} timed out. Click Refresh to try again.`
+        );
+        nextInbox[id] = snap.docs
+          .map(item => ({ id: item.id, collectionId: id, ...item.data() }))
+          .sort((a, b) => {
+            const aTime = a.createdAt?.toMillis?.() || a.updatedAt?.toMillis?.() || 0;
+            const bTime = b.createdAt?.toMillis?.() || b.updatedAt?.toMillis?.() || 0;
+            return bTime - aTime;
+          });
+      } catch (err) {
+        console.warn(`Inbox collection ${id} could not be loaded:`, err);
+        failures.push(id);
+      }
+    }));
+
+    setInboxData(nextInbox);
+    setInboxLoading(false);
+    if (failures.length > 0) {
+      toast.error(`Some admin collections could not load: ${failures.join(", ")}`);
+    } else if (!silent) {
+      toast.success("✅ Admin requests updated!");
+    }
+    return nextInbox;
+  };
 
   // Refresh all data
   const refreshData = async () => {
@@ -119,6 +298,10 @@ export default function UnifiedControlCenterV3() {
       console.log("✅ Chats loaded:", allChats.length, "Active:", activeChatsCount);
       
       setChats(allChats);
+
+      // Refresh waitlists, enquiries, and generated reports using the same
+      // explicit-refresh pattern as documents and chats.
+      await refreshInboxData({ silent: true });
 
       // Calculate stats
       const ordersSnap = await withTimeout(
@@ -161,6 +344,47 @@ export default function UnifiedControlCenterV3() {
       toast.error("Failed to refresh: " + err.message);
     }
     setLoading(false);
+  };
+
+  const handleInboxStatus = async (collectionId, itemId, status) => {
+    setLoading(true);
+    try {
+      await setDoc(
+        doc(db, collectionId, itemId),
+        { status, adminUpdatedAt: serverTimestamp() },
+        { merge: true }
+      );
+      setInboxData(prev => ({
+        ...prev,
+        [collectionId]: (prev[collectionId] || []).map(item =>
+          item.id === itemId ? { ...item, status } : item
+        ),
+      }));
+      toast.success(`✅ Marked as ${status}.`);
+    } catch (err) {
+      console.error("Inbox update error:", err);
+      toast.error(`Could not update record: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteInboxItem = async (collectionId, itemId) => {
+    if (!window.confirm("Delete this admin record permanently?")) return;
+    setLoading(true);
+    try {
+      await deleteDoc(doc(db, collectionId, itemId));
+      setInboxData(prev => ({
+        ...prev,
+        [collectionId]: (prev[collectionId] || []).filter(item => item.id !== itemId),
+      }));
+      toast.success("✅ Record deleted.");
+    } catch (err) {
+      console.error("Inbox delete error:", err);
+      toast.error(`Could not delete record: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -569,6 +793,9 @@ export default function UnifiedControlCenterV3() {
             <button className={`uc-tab-btn ${tab === "support" ? "active" : ""}`} onClick={() => setTab("support")}>
               💬 Support ({chats.length})
             </button>
+            <button className={`uc-tab-btn ${tab === "inbox" ? "active" : ""}`} onClick={() => setTab("inbox")}>
+              📥 Requests ({INBOX_COLLECTIONS.reduce((sum, item) => sum + (inboxData[item.id]?.length || 0), 0)})
+            </button>
           </aside>
 
           {/* Main */}
@@ -826,6 +1053,20 @@ export default function UnifiedControlCenterV3() {
                   {loading ? "⟳ Saving..." : "💾 Save AI Training"}
                 </button>
               </div>
+            )}
+
+            {/* CUSTOMER REQUESTS, WAITLISTS & REPORTS */}
+            {tab === "inbox" && (
+              <AdminInbox
+                inboxData={inboxData}
+                inboxFilter={inboxFilter}
+                setInboxFilter={setInboxFilter}
+                inboxLoading={inboxLoading}
+                refreshInboxData={refreshInboxData}
+                handleInboxStatus={handleInboxStatus}
+                handleDeleteInboxItem={handleDeleteInboxItem}
+                loading={loading}
+              />
             )}
 
             {/* SUPPORT */}
