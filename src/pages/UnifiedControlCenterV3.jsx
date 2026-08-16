@@ -3,16 +3,47 @@
 
 import { useState, useEffect, useRef } from "react";
 import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, storage } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 
+function withTimeout(promise, timeoutMs, message) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error(message));
+      }
+    }, timeoutMs);
+
+    Promise.resolve(promise).then(
+      value => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        }
+      },
+      error => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        }
+      }
+    );
+  });
+}
+
 export default function UnifiedControlCenterV3() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
   const [documents, setDocuments] = useState([]);
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
@@ -51,13 +82,21 @@ export default function UnifiedControlCenterV3() {
     setLoading(true);
     try {
       // Fetch documents
-      const docsSnap = await getDocs(collection(db, "products"));
+      const docsSnap = await withTimeout(
+        getDocs(collection(db, "products")),
+        15000,
+        "Loading documents timed out. Click Refresh to try again."
+      );
       const allDocs = docsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       setDocuments(allDocs);
       console.log("✅ Documents loaded:", allDocs.length);
 
       // Fetch chats - filter for recent ones (last 7 days)
-      const chatsSnap = await getDocs(collection(db, "chats"));
+      const chatsSnap = await withTimeout(
+        getDocs(collection(db, "chats")),
+        15000,
+        "Loading chats timed out. Click Refresh to try again."
+      );
       const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
       const allChats = chatsSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
@@ -72,7 +111,11 @@ export default function UnifiedControlCenterV3() {
       setChats(allChats);
 
       // Calculate stats
-      const ordersSnap = await getDocs(collection(db, "orders"));
+      const ordersSnap = await withTimeout(
+        getDocs(collection(db, "orders")),
+        15000,
+        "Loading orders timed out. Click Refresh to try again."
+      );
       const allOrders = ordersSnap.docs.map(d => d.data());
       const totalRevenue = allOrders
         .filter(o => o.status === "paid")
@@ -80,7 +123,11 @@ export default function UnifiedControlCenterV3() {
 
       // Load AI training config
       try {
-        const aiSnap = await getDocs(collection(db, "config"));
+        const aiSnap = await withTimeout(
+          getDocs(collection(db, "config")),
+          15000,
+          "Loading AI settings timed out."
+        );
         const aiConfig = aiSnap.docs.find(d => d.id === "weberai");
         if (aiConfig?.exists()) {
           setAiTraining(prev => ({ ...prev, ...aiConfig.data() }));
@@ -126,56 +173,95 @@ export default function UnifiedControlCenterV3() {
     loadMessages();
   }, [selectedChat]);
 
-  // Handle file selection with progress
+  // Handle file selection with resumable progress and a hard timeout
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setLoading(true);
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+    ];
+    const maxSize = 20 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.error("File is too large. Please upload a file smaller than 20 MB.");
+      e.target.value = "";
+      return;
+    }
+    if (file.type && !allowedTypes.includes(file.type)) {
+      toast.error("Unsupported file type. Upload a PDF, DOC/DOCX, JPG, PNG, or GIF.");
+      e.target.value = "";
+      return;
+    }
+
+    setUploading(true);
+    setUploadError("");
     setUploadProgress(0);
-    toast.loading("📤 Uploading file...");
+    const toastId = toast.loading("📤 Uploading file... 0%");
+    let uploadTask;
 
     try {
       console.log("📤 Starting upload:", file.name, file.size, "bytes");
-      
       const storageRef = ref(storage, `documents/${Date.now()}_${file.name}`);
-      
-      // Upload with progress tracking
-      const uploadTask = uploadBytes(storageRef, file);
-      
-      uploadTask.then(() => {
-        setUploadProgress(50);
-        console.log("📤 Upload complete, getting download URL...");
+      const uploadPromise = new Promise((resolve, reject) => {
+        uploadTask = uploadBytesResumable(storageRef, file, {
+          contentType: file.type || "application/octet-stream",
+        });
+        uploadTask.on(
+          "state_changed",
+          snapshot => {
+            const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            setUploadProgress(progress);
+            toast.loading(`📤 Uploading file... ${progress}%`, { id: toastId });
+          },
+          reject,
+          () => resolve(uploadTask.snapshot)
+        );
       });
 
-      await uploadTask;
-      
-      const fileUrl = await getDownloadURL(storageRef);
+      const snapshot = await withTimeout(
+        uploadPromise,
+        120000,
+        "File upload timed out. Check your connection and try again."
+      );
+      const fileUrl = await withTimeout(
+        getDownloadURL(snapshot.ref),
+        15000,
+        "The file uploaded but its download link could not be created."
+      );
+
+      setNewDoc(prev => ({ ...prev, fileUrl, fileName: file.name }));
       setUploadProgress(100);
-      
-      setNewDoc(prev => ({
-        ...prev,
-        fileUrl,
-        fileName: file.name,
-      }));
-      
-      console.log("✅ File uploaded:", fileUrl);
-      toast.dismiss();
-      toast.success("✅ File uploaded! Ready to add document.");
+      toast.success("✅ File uploaded! Ready to add document.", { id: toastId });
     } catch (err) {
+      uploadTask?.cancel?.();
       console.error("Upload error:", err);
-      toast.dismiss();
-      toast.error("Upload failed: " + err.message);
+      const message = err?.message || "Unable to upload the file.";
+      setUploadError(message);
+      toast.error(`Upload failed: ${message}`, { id: toastId });
     } finally {
-      setLoading(false);
+      setUploading(false);
       setUploadProgress(0);
+      e.target.value = "";
     }
   };
 
   // Add new document
   const handleAddDocument = async () => {
+    if (uploading) {
+      toast.error("Please wait for the file upload to finish.");
+      return;
+    }
     if (!newDoc.title || !newDoc.price) {
       toast.error("❌ Title and price are required");
+      return;
+    }
+    if (!newDoc.fileUrl) {
+      toast.error("Please upload the document file before adding it.");
       return;
     }
 
@@ -202,8 +288,19 @@ export default function UnifiedControlCenterV3() {
         updatedAt: serverTimestamp(),
       };
 
-      await setDoc(docRef, docData);
+      await withTimeout(
+        setDoc(docRef, docData),
+        15000,
+        "Saving the document timed out. Click Add Document to try again."
+      );
       console.log("✅ Document added to Firestore:", docRef.id);
+
+      // Update the visible list immediately instead of waiting for every dashboard
+      // collection to refresh. The manual Refresh button remains available for a
+      // complete re-sync.
+      setDocuments(prev => [{ id: docRef.id, ...docData }, ...prev]);
+      setStats(prev => ({ ...prev, documentsCount: prev.documentsCount + 1 }));
+      setLastRefresh(new Date().toLocaleTimeString());
 
       toast.dismiss();
       toast.success("✅ Document added successfully!");
@@ -218,8 +315,7 @@ export default function UnifiedControlCenterV3() {
         fileUrl: "",
         fileName: "",
       });
-      
-      await refreshData();
+      setUploadError("");
     } catch (err) {
       console.error("Add doc error:", err);
       toast.dismiss();
@@ -503,6 +599,7 @@ export default function UnifiedControlCenterV3() {
                       <div style={{ color: "#fff", fontWeight: 700 }}>Click to upload or drag and drop</div>
                       <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>PDF, DOCX, or images</div>
                       {newDoc.fileName && <div className="uc-file-name">✅ {newDoc.fileName}</div>}
+                      {uploadError && <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 6 }}>⚠️ {uploadError}</div>}
                     </div>
                   </div>
                   {uploadProgress > 0 && uploadProgress < 100 && (
@@ -516,11 +613,11 @@ export default function UnifiedControlCenterV3() {
                     onChange={handleFileSelect}
                     style={{ display: "none" }}
                     accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.gif"
-                    disabled={loading}
+                    disabled={loading || uploading}
                   />
 
-                  <button className="uc-btn" onClick={handleAddDocument} disabled={loading} style={{ width: "100%", marginTop: 16 }}>
-                    {loading ? "⟳ Adding..." : "✅ Add Document"}
+                  <button className="uc-btn" onClick={handleAddDocument} disabled={loading || uploading} style={{ width: "100%", marginTop: 16 }}>
+                    {uploading ? "⟳ Uploading..." : loading ? "⟳ Adding..." : "✅ Add Document"}
                   </button>
                 </div>
 
