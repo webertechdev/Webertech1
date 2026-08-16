@@ -87,7 +87,54 @@ function inboxMessage(item) {
   return item.message || item.inquiry || item.request || item.description || item.details || item.summary || item.course || item.product || item.service || "No message supplied";
 }
 
-function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refreshInboxData, handleInboxStatus, handleDeleteInboxItem, loading }) {
+function csvEscape(value) {
+  const text = displayInboxValue(value).replace(/\r?\n/g, " ");
+  return /[",]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadInboxCsv(inboxData, inboxFilter) {
+  const selectedCollections = INBOX_COLLECTIONS.filter(item => inboxFilter === "all" || item.id === inboxFilter);
+  const records = selectedCollections.flatMap(collectionInfo =>
+    (inboxData[collectionInfo.id] || []).map(record => ({ collectionInfo, record }))
+  );
+  if (records.length === 0) {
+    toast.error("There are no records to export.");
+    return;
+  }
+
+  const standardFields = ["collection", "recordId", "status", "name", "email", "phone", "message", "receivedAt"];
+  const hiddenFields = ["id", "collectionId", "createdAt", "updatedAt", "adminUpdatedAt", "status", "name", "fullName", "customerName", "firstName", "email", "phone", "message", "inquiry", "request", "description", "details", "summary", "course", "product", "service", "title", "reportTitle", "reportType"];
+  const extraFields = [...new Set(records.flatMap(({ record }) => Object.keys(record).filter(key => !hiddenFields.includes(key))))];
+  const headers = [...standardFields, ...extraFields];
+  const rows = records.map(({ collectionInfo, record }) => {
+    const standardValues = [
+      collectionInfo.label,
+      record.id,
+      record.status || "new",
+      inboxCustomerName(record),
+      record.email || "",
+      record.phone || "",
+      inboxMessage(record),
+      formatInboxDate(record.createdAt || record.updatedAt),
+    ];
+    return [...standardValues, ...extraFields.map(field => record[field])].map(csvEscape).join(",");
+  });
+
+  const csv = `\\ufeff${headers.map(csvEscape).join(",")}\\n${rows.join("\\n")}`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const scope = inboxFilter === "all" ? "all-requests" : inboxFilter;
+  link.href = url;
+  link.download = `webertech-${scope}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast.success(`✅ Exported ${records.length} record${records.length === 1 ? "" : "s"} for Excel.`);
+}
+
+function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refreshInboxData, handleInboxStatus, handleDeleteInboxItem, loading, viewMode, setViewMode }) {
   const visibleCollections = INBOX_COLLECTIONS.filter(item => inboxFilter === "all" || item.id === inboxFilter);
   const totalRecords = INBOX_COLLECTIONS.reduce((sum, item) => sum + (inboxData[item.id]?.length || 0), 0);
 
@@ -101,9 +148,20 @@ function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refr
               Manage waitlists, notifications, service enquiries, and generated reports from Firestore. Data loads only when you refresh.
             </p>
           </div>
-          <button className="uc-refresh-btn" onClick={() => refreshInboxData()} disabled={inboxLoading || loading}>
-            {inboxLoading ? "⟳ Loading..." : "🔄 Refresh requests"}
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="uc-refresh-btn" onClick={() => refreshInboxData()} disabled={inboxLoading || loading}>
+              {inboxLoading ? "⟳ Loading..." : "🔄 Refresh requests"}
+            </button>
+            <button className={`uc-tab-btn ${viewMode === "table" ? "active" : ""}`} onClick={() => setViewMode("table")} style={{ width: "auto", margin: 0, padding: "8px 12px", fontSize: 12 }}>
+              ▦ Table view
+            </button>
+            <button className={`uc-tab-btn ${viewMode === "cards" ? "active" : ""}`} onClick={() => setViewMode("cards")} style={{ width: "auto", margin: 0, padding: "8px 12px", fontSize: 12 }}>
+              ▣ Card view
+            </button>
+            <button className="uc-btn" onClick={() => downloadInboxCsv(inboxData, inboxFilter)} style={{ padding: "8px 12px", fontSize: 12 }}>
+              ⬇ Download Excel
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 20 }}>
@@ -142,6 +200,48 @@ function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refr
             {records.length === 0 ? (
               <div style={{ padding: "24px 12px", borderRadius: 10, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.5)", textAlign: "center", fontSize: 13 }}>
                 No records in this collection.
+              </div>
+            ) : viewMode === "table" ? (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ color: "#86efac", textAlign: "left", borderBottom: "1px solid rgba(22,163,74,0.35)" }}>
+                      <th style={{ padding: "10px 8px" }}>Customer / Report</th>
+                      <th style={{ padding: "10px 8px" }}>Contact</th>
+                      <th style={{ padding: "10px 8px" }}>Message / Summary</th>
+                      <th style={{ padding: "10px 8px" }}>Received</th>
+                      <th style={{ padding: "10px 8px" }}>Status</th>
+                      <th style={{ padding: "10px 8px" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {records.map(record => {
+                      const isReport = collectionInfo.id === "reports";
+                      const status = record.status || "new";
+                      const title = isReport ? (record.title || record.reportTitle || record.reportType || "Platform report") : inboxCustomerName(record);
+                      const contact = [record.email, record.phone].filter(Boolean).join(" • ") || "—";
+                      return (
+                        <tr key={record.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.78)", verticalAlign: "top" }}>
+                          <td style={{ padding: "12px 8px", color: "#4ade80", fontWeight: 700 }}>{title}</td>
+                          <td style={{ padding: "12px 8px" }}>{contact}</td>
+                          <td style={{ padding: "12px 8px", maxWidth: 280, whiteSpace: "pre-wrap" }}>{inboxMessage(record)}</td>
+                          <td style={{ padding: "12px 8px", whiteSpace: "nowrap" }}>{formatInboxDate(record.createdAt || record.updatedAt)}</td>
+                          <td style={{ padding: "12px 8px" }}>
+                            <select value={status} onChange={event => handleInboxStatus(collectionInfo.id, record.id, event.target.value)} disabled={loading} style={{ background: "#1e293b", color: "#fff", border: "1px solid rgba(22,163,74,0.45)", borderRadius: 6, padding: "6px 8px" }}>
+                              <option value="new">New</option>
+                              <option value="contacted">Contacted</option>
+                              <option value="resolved">Resolved</option>
+                              <option value="archived">Archived</option>
+                            </select>
+                          </td>
+                          <td style={{ padding: "12px 8px" }}>
+                            <button className="uc-btn uc-btn-danger" style={{ padding: "6px 9px", fontSize: 11 }} onClick={() => handleDeleteInboxItem(collectionInfo.id, record.id)} disabled={loading}>Delete</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <div style={{ display: "grid", gap: 12 }}>
@@ -199,6 +299,7 @@ export default function UnifiedControlCenterV3() {
   const [inboxData, setInboxData] = useState(EMPTY_INBOX);
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxFilter, setInboxFilter] = useState("all");
+  const [inboxViewMode, setInboxViewMode] = useState("cards");
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [adminReply, setAdminReply] = useState("");
@@ -1066,6 +1167,8 @@ export default function UnifiedControlCenterV3() {
                 handleInboxStatus={handleInboxStatus}
                 handleDeleteInboxItem={handleDeleteInboxItem}
                 loading={loading}
+                viewMode={inboxViewMode}
+                setViewMode={setInboxViewMode}
               />
             )}
 
