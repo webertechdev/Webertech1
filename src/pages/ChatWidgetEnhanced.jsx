@@ -17,22 +17,22 @@ const QUICK = {
   en: [
     "What services does WeberTech offer?",
     "How do I buy bundles?",
-    "Generate a professional CV for me",
+    "Where can I get a professional CV?",
     "How do I register a business?",
     "Tell me about the Academy",
   ],
   sw: [
     "WeberTech inatoa huduma gani?",
     "Ninunue bundle vipi?",
-    "Nifanyie CV ya kisasa",
+    "Ninapata wapi CV ya kisasa?",
     "Nasajili vipi biashara?",
     "Niambie kuhusu Academy",
   ],
 };
 
 const GREETING = {
-  en: "👋 Jambo! I'm WeberAI, your personal WeberTech assistant.\nI can help you with Bundles, Cyber services, Academy, Electronics, and even generate documents for you. How can I help today?",
-  sw: "👋 Jambo! Mimi ni WeberAI, msaidizi wako wa WeberTech.\nNaweza kukusaidia na Bundles, huduma za Cyber, Academy, Electronics, na hata kukutengenezea stakabadhi. Nikusaidie nini leo?",
+  en: "👋 Jambo! I'm WeberAI, your personal WeberTech assistant.\nI can help you find the right WeberTech service, open the correct page, and follow the next steps. What would you like help with today?",
+  sw: "👋 Jambo! Mimi ni WeberAI, msaidizi wako wa WeberTech.\nNaweza kukusaidia kupata huduma sahihi, kufungua ukurasa unaofaa, na kufuata hatua zinazofuata. Nikusaidie nini leo?",
 };
 
 function getSessionId() {
@@ -88,6 +88,35 @@ const CSS = `
 
 function tstamp() {
   return new Date().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+}
+
+// Render the Markdown links returned by WeberAI as safe clickable links.
+function renderMessageLine(line, lineIndex) {
+  const tokenPattern = /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]+)\)|(https?:\/\/[^\s]+|\/(?:cyber|academy|electronics|dev|hustle|dashboard|auth)(?:[^\s]*)?)/g;
+  const parts = [];
+  let cursor = 0;
+  let match;
+
+  while ((match = tokenPattern.exec(line)) !== null) {
+    if (match.index > cursor) parts.push(line.slice(cursor, match.index));
+    const href = match[2] || match[3];
+    const label = match[1] || href;
+    parts.push(
+      <a
+        key={`${lineIndex}-${match.index}`}
+        href={href}
+        target={href.startsWith("http") ? "_blank" : undefined}
+        rel={href.startsWith("http") ? "noreferrer" : undefined}
+        style={{ color: "#15803d", fontWeight: 800, textDecoration: "underline" }}
+      >
+        {label}
+      </a>
+    );
+    cursor = tokenPattern.lastIndex;
+  }
+
+  if (cursor < line.length) parts.push(line.slice(cursor));
+  return parts.length ? parts : line;
 }
 
 export default function ChatWidgetEnhanced() {
@@ -243,7 +272,9 @@ export default function ChatWidgetEnhanced() {
       });
 
       const data = await res.json();
-      let answer = data.answer;
+      let answer = typeof data.answer === "string"
+        ? data.answer
+        : (data.error || "Sorry, I could not process that request. Please try again or contact WeberTech on WhatsApp.");
       let pdfData = null;
 
       // Check for PDF generation tag
@@ -312,7 +343,7 @@ export default function ChatWidgetEnhanced() {
             {msgs.filter(m => m && m.text).map(m => (
               <div key={m.id} style={{ display:"flex", flexDirection:"column", alignItems: m.role==="user" ? "flex-end" : "flex-start" }}>
                 <div className={`wt-bub ${m.role==="user" ? "wt-user" : "wt-ai"}`}>
-                  {(m.text || "").split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{line}</p>)}
+                  {(m.text || "").split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{renderMessageLine(line, i)}</p>)}
                   {m.pdfData && (
                     <button className="wt-pdf-btn" onClick={() => handleGeneratePDF(m.pdfData)}>
                       📄 Download {m.pdfData.type} PDF

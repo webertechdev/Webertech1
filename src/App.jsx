@@ -11,8 +11,8 @@ import { auth, db }            from "./config/firebase";
 
 // Pages — all in src/pages/
 import Home        from "./pages/Home";
-import Academy     from "./pages/StubPage";
-import Electronics from "./pages/StubPage";
+import Academy     from "./pages/Academy";
+import Electronics from "./pages/Electronics";
 import Cyber         from "./pages/StubPage";
 import CyberHomeEnhanced from "./pages/cyber/CyberHomeEnhanced";
 import CyberHome           from "./pages/StubPage";
@@ -25,7 +25,7 @@ import Writing from "./pages/cyber/Writing";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
-import Dev         from "./pages/StubPage";
+import Dev         from "./pages/Dev";
 import Hustle      from "./pages/StubPage";
 import Dashboard   from "./pages/StubPage";
 import DashboardV3 from "./pages/DashboardV3";
