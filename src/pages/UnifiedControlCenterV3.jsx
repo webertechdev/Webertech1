@@ -134,7 +134,7 @@ function downloadInboxCsv(inboxData, inboxFilter) {
   toast.success(`✅ Exported ${records.length} record${records.length === 1 ? "" : "s"} for Excel.`);
 }
 
-function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refreshInboxData, handleInboxStatus, handleDeleteInboxItem, loading, viewMode, setViewMode }) {
+function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refreshInboxData, handleInboxStatus, handleDeleteInboxItem, loading, viewMode, setViewMode, openContactModal }) {
   const visibleCollections = INBOX_COLLECTIONS.filter(item => inboxFilter === "all" || item.id === inboxFilter);
   const totalRecords = INBOX_COLLECTIONS.reduce((sum, item) => sum + (inboxData[item.id]?.length || 0), 0);
 
@@ -236,7 +236,8 @@ function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refr
                           </td>
                           <td style={{ padding: "12px 8px" }}>
                             <div style={{ display: "flex", gap: 6 }}>
-                              <button className="uc-btn" style={{ padding: "6px 9px", fontSize: 11, background: "#25d366" }} onClick={() => openContactModal(record, collectionInfo)} disabled={loading}>WhatsApp</button>
+                              <button className="uc-btn" style={{ padding: "6px 9px", fontSize: 11, background: "#25d366" }} onClick={() => openContactModal(record, collectionInfo, "whatsapp")} disabled={loading}>WhatsApp</button>
+                              <button className="uc-btn" style={{ padding: "6px 9px", fontSize: 11, background: "#2563eb" }} onClick={() => openContactModal(record, collectionInfo, "email")} disabled={loading}>Email</button>
                               <button className="uc-btn uc-btn-danger" style={{ padding: "6px 9px", fontSize: 11 }} onClick={() => handleDeleteInboxItem(collectionInfo.id, record.id)} disabled={loading}>Delete</button>
                             </div>
                           </td>
@@ -273,6 +274,8 @@ function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refr
                         </div>
                       )}
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+                        <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11, background: "#25d366" }} onClick={() => openContactModal(record, collectionInfo, "whatsapp")} disabled={loading}>Contact WhatsApp</button>
+                        <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11, background: "#2563eb" }} onClick={() => openContactModal(record, collectionInfo, "email")} disabled={loading}>Email</button>
                         <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11 }} onClick={() => handleInboxStatus(collectionInfo.id, record.id, "contacted")} disabled={loading}>Mark contacted</button>
                         <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11, background: "#2563eb" }} onClick={() => handleInboxStatus(collectionInfo.id, record.id, "resolved")} disabled={loading}>Mark resolved</button>
                         <button className="uc-btn" style={{ padding: "7px 10px", fontSize: 11, background: "#475569" }} onClick={() => handleInboxStatus(collectionInfo.id, record.id, "archived")} disabled={loading}>Archive</button>
@@ -305,6 +308,7 @@ export default function UnifiedControlCenterV3() {
   const [inboxViewMode, setInboxViewMode] = useState("cards");
   const [contactModal, setContactModal] = useState(null);
   const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -494,59 +498,94 @@ export default function UnifiedControlCenterV3() {
     }
   };
 
-  const generateAiWhatsappMessage = async (record, collectionInfo) => {
+  const generateAiWhatsappMessage = async (record, collectionInfo, channel = "whatsapp") => {
     setIsGenerating(true);
     try {
       const customerName = inboxCustomerName(record);
       const message = inboxMessage(record);
       const service = collectionInfo.label;
+      const prompt = channel === "email"
+        ? `Draft a professional email reply for ${customerName} regarding their ${service} enquiry. Their message was: "${message}". Return exactly two labeled sections: Subject: one concise subject line, then Message: a friendly concise email body. Mention WeberTech Kenya and ask how we can help further. Do not use placeholder brackets.`
+        : `Draft a professional, friendly WhatsApp reply to ${customerName} who inquired about ${service}. Their message was: "${message}". Keep it concise, mention WeberTech Kenya, and ask how we can help further. Return only the message text, without a subject or labels.`;
 
-      // Call the existing chat API to generate a professional reply
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: `Draft a professional, friendly WhatsApp reply to ${customerName} who inquired about ${service}. Their message was: "${message}". Keep it concise, mention WeberTech, and ask how we can help further. Do not include any placeholder brackets.`,
-          history: [],
-          systemPrompt: "You are a professional customer service assistant for WeberTech Kenya. Draft a concise, helpful WhatsApp reply. No emojis except one at the end."
-        })
+          messages: [{ role: "user", text: prompt }],
+          lang: "en",
+        }),
       });
 
-      if (!response.ok) throw new Error("AI generation failed");
-      const data = await response.json();
-      setWhatsappMessage(data.reply || "");
-      toast.success("✨ AI reply generated!");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "AI generation failed");
+      const answer = data.answer || data.reply || "";
+      if (!answer) throw new Error("AI returned an empty draft");
+
+      if (channel === "email") {
+        const subjectMatch = answer.match(/Subject\s*:\s*(.*)/i);
+        const messageMatch = answer.match(/Message\s*:\s*([\s\S]*)/i);
+        setEmailSubject(subjectMatch?.[1]?.trim() || `${service} enquiry — WeberTech`);
+        setWhatsappMessage((messageMatch?.[1] || answer).trim());
+      } else {
+        setWhatsappMessage(answer.trim());
+      }
+      toast.success("✨ AI draft generated. Review and edit it before sending.");
     } catch (err) {
-      console.error("AI Gen error:", err);
-      // Fallback to template if API fails
-      const fallback = `Hello ${inboxCustomerName(record)}, this is WeberTech regarding your ${collectionInfo.label} inquiry. How can we assist you today?`;
+      console.error("AI contact draft error:", err);
+      const customerName = inboxCustomerName(record);
+      const fallback = `Hello ${customerName}, this is WeberTech regarding your ${collectionInfo.label} enquiry. How can we assist you today?`;
       setWhatsappMessage(fallback);
-      toast.error("AI generation failed. Used template instead.");
+      if (channel === "email") setEmailSubject(`${collectionInfo.label} enquiry — WeberTech`);
+      toast.error("AI generation failed. A ready-to-edit template was added instead.");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const openContactModal = (record, collectionInfo) => {
-    setContactModal({ record, collectionInfo });
-    setWhatsappMessage(`Hello ${inboxCustomerName(record)}, this is WeberTech. We received your inquiry regarding ${collectionInfo.label}. How can we help you today?`);
+  const openContactModal = (record, collectionInfo, channel = "whatsapp") => {
+    const customerName = inboxCustomerName(record);
+    setContactModal({ record, collectionInfo, channel });
+    setWhatsappMessage(`Hello ${customerName}, this is WeberTech. We received your enquiry regarding ${collectionInfo.label}. How can we help you today?`);
+    setEmailSubject(`${collectionInfo.label} enquiry — WeberTech`);
   };
 
-  const sendWhatsapp = () => {
-    if (!contactModal?.record?.phone && !contactModal?.record?.phoneNumber) {
-      toast.error("No phone number available for this contact.");
-      return;
-    }
-    const rawPhone = contactModal.record.phone || contactModal.record.phoneNumber;
-    // Clean phone number: remove non-digits, ensure it starts with 254
-    let cleanPhone = rawPhone.replace(/\D/g, "");
-    if (cleanPhone.startsWith("0")) cleanPhone = "254" + cleanPhone.substring(1);
-    if (!cleanPhone.startsWith("254")) cleanPhone = "254" + cleanPhone;
+  const sendContact = () => {
+    if (!contactModal?.record) return;
+    const { record, collectionInfo, channel } = contactModal;
 
-    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappMessage)}`;
-    window.open(url, "_blank");
+    if (channel === "email") {
+      const email = record.email || record.emailAddress;
+      if (!email) {
+        toast.error("No email address available for this contact.");
+        return;
+      }
+      const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(whatsappMessage)}`;
+      window.location.href = mailto;
+      toast.success("📧 Opening your email application...");
+    } else {
+      const rawPhone = record.phone || record.phoneNumber || record.mobile;
+      if (!rawPhone) {
+        toast.error("No phone number available for this contact.");
+        return;
+      }
+      let cleanPhone = String(rawPhone).replace(/\D/g, "");
+      if (cleanPhone.startsWith("0")) cleanPhone = `254${cleanPhone.substring(1)}`;
+      if (!cleanPhone.startsWith("254")) cleanPhone = `254${cleanPhone}`;
+      if (cleanPhone.length < 11) {
+        toast.error("The contact phone number is not a valid Kenyan number.");
+        return;
+      }
+      const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappMessage)}`;
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) window.location.href = url;
+      toast.success("🚀 Opening WhatsApp...");
+    }
+
+    if (collectionInfo?.id && record.id) {
+      handleInboxStatus(collectionInfo.id, record.id, "contacted");
+    }
     setContactModal(null);
-    toast.success("🚀 Opening WhatsApp...");
   };
 
   useEffect(() => {
@@ -924,12 +963,14 @@ export default function UnifiedControlCenterV3() {
       <Toaster position="top-center" />
       <Navbar />
 
-      {/* WhatsApp Contact Modal */}
+      {/* WhatsApp / Email Contact Modal */}
       {contactModal && (
         <div className="uc-modal-overlay" onClick={() => !isGenerating && setContactModal(null)}>
           <div className="uc-modal" onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <h3 style={{ color: "#fff", margin: 0 }}>💬 Contact via WhatsApp</h3>
+              <h3 style={{ color: "#fff", margin: 0 }}>
+                {contactModal.channel === "email" ? "📧 Contact via Email" : "💬 Contact via WhatsApp"}
+              </h3>
               <button
                 onClick={() => setContactModal(null)}
                 style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", fontSize: 20 }}
@@ -939,9 +980,24 @@ export default function UnifiedControlCenterV3() {
             <div style={{ background: "rgba(255,255,255,0.05)", padding: 12, borderRadius: 10, marginBottom: 20 }}>
               <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 13 }}>{inboxCustomerName(contactModal.record)}</div>
               <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, marginTop: 4 }}>
-                {contactModal.record.phone || contactModal.record.phoneNumber || "No phone number"}
+                {contactModal.channel === "email"
+                  ? (contactModal.record.email || contactModal.record.emailAddress || "No email address")
+                  : (contactModal.record.phone || contactModal.record.phoneNumber || contactModal.record.mobile || "No phone number")}
               </div>
             </div>
+
+            {contactModal.channel === "email" && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, display: "block", marginBottom: 6 }}>Subject</label>
+                <input
+                  className="uc-input"
+                  value={emailSubject}
+                  onChange={e => setEmailSubject(e.target.value)}
+                  placeholder="Email subject"
+                  style={{ marginBottom: 0 }}
+                />
+              </div>
+            )}
 
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -949,7 +1005,7 @@ export default function UnifiedControlCenterV3() {
                 <button
                   className="uc-btn"
                   style={{ padding: "4px 10px", fontSize: 10, background: "#7c3aed" }}
-                  onClick={() => generateAiWhatsappMessage(contactModal.record, contactModal.collectionInfo)}
+                  onClick={() => generateAiWhatsappMessage(contactModal.record, contactModal.collectionInfo, contactModal.channel)}
                   disabled={isGenerating}
                 >
                   {isGenerating ? "✨ Generating..." : "🤖 Draft with AI"}
@@ -967,10 +1023,11 @@ export default function UnifiedControlCenterV3() {
             <div style={{ display: "flex", gap: 12 }}>
               <button
                 className="uc-btn"
-                style={{ flex: 1, background: "#25d366" }}
-                onClick={sendWhatsapp}
+                style={{ flex: 1, background: contactModal.channel === "email" ? "#2563eb" : "#25d366" }}
+                onClick={sendContact}
+                disabled={isGenerating}
               >
-                Send to WhatsApp
+                {contactModal.channel === "email" ? "Open Email Composer" : "Open WhatsApp"}
               </button>
               <button
                 className="uc-btn"
@@ -1292,6 +1349,7 @@ export default function UnifiedControlCenterV3() {
                 loading={loading}
                 viewMode={inboxViewMode}
                 setViewMode={setInboxViewMode}
+                openContactModal={openContactModal}
               />
             )}
 
