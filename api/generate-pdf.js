@@ -59,7 +59,7 @@ export default async function handler(req, res) {
     doc.setFontSize(9);
     doc.setTextColor(156, 163, 175);
     doc.text("© 2026 WeberTech Solutions KE. All rights reserved.", margin, footerY);
-    doc.text("Mombasa, Kenya | +254 722 508 904", pageWidth - margin - 60, footerY);
+    doc.text("Chuka, Kenya | +254 722 508 904", pageWidth - margin - 60, footerY);
 
     // ── Output ──
     const pdfOutput = doc.output("arraybuffer");

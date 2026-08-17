@@ -55,7 +55,7 @@ export default function Footer() {
             <h4 style={{ color:"#fff", fontWeight:700, fontSize:13, marginBottom:16, textTransform:"uppercase", letterSpacing:"0.6px" }}>Contact</h4>
             <p style={{ fontSize:13.5, marginBottom:10 }}>✉ support@webertech.co.ke</p>
             <p style={{ fontSize:13.5, marginBottom:10 }}>📞 +254 722 508 904</p>
-            <p style={{ fontSize:13.5, marginBottom:10 }}>📍 Mombasa, Kenya</p>
+            <p style={{ fontSize:13.5, marginBottom:10 }}>📍 Chuka, Kenya</p>
           </div>
         </div>
 

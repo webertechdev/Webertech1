@@ -8,10 +8,9 @@ Add these variables in the Vercel project settings for the Production environmen
 
 ```text
 RESEND_API_KEY=your_resend_api_key
-RESEND_FROM_EMAIL=onboarding@resend.dev
 ```
 
-Use a verified WeberTech sender address when the domain is verified in Resend. The `onboarding@resend.dev` sender is suitable only for the initial Resend test and may have provider restrictions.
+The server sends from the verified address `support@webertech.co.ke`. Do not add or use `onboarding@resend.dev`; that is a Resend testing sender and is restricted to account-owner testing.
 
 The server also needs Firebase Admin credentials to verify that the signed-in user is an administrator. Configure these server-only variables in Vercel:
 

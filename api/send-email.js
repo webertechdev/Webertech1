@@ -70,9 +70,10 @@ export default async function handler(req, res) {
     }
 
     const apiKey = process.env.RESEND_API_KEY?.trim();
-    const from = process.env.RESEND_FROM_EMAIL?.trim();
-    if (!apiKey || !from) {
-      return jsonError(res, 503, "Email sending is not configured. Add RESEND_API_KEY and RESEND_FROM_EMAIL in Vercel.");
+    // This is the verified WeberTech sender. Do not use onboarding@resend.dev.
+    const from = "support@webertech.co.ke";
+    if (!apiKey) {
+      return jsonError(res, 503, "Email sending is not configured. Add RESEND_API_KEY in Vercel.");
     }
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
@@ -111,7 +112,7 @@ export default async function handler(req, res) {
       if (resendResponse.status === 403) userFriendlyError = "Resend permission denied. Verify the sender domain and sender address in Resend.";
       if (resendResponse.status === 422) {
         if (/domain|sender|from/i.test(providerError)) {
-          userFriendlyError = "Resend rejected the sender. Verify a WeberTech domain in Resend and set RESEND_FROM_EMAIL to that verified address. The onboarding@resend.dev sender is intended for account-owner testing only.";
+          userFriendlyError = "Resend rejected support@webertech.co.ke. Confirm that webertech.co.ke is verified in Resend and that sending is enabled for this domain.";
         } else {
           userFriendlyError = `Resend validation error: ${providerError || "check the recipient and message fields"}`;
         }
