@@ -92,11 +92,23 @@ export default async function handler(req, res) {
 
     const providerData = await resendResponse.json().catch(() => ({}));
     if (!resendResponse.ok) {
-      console.error("Resend request failed", { status: resendResponse.status, code: providerData?.name || providerData?.statusCode });
-      if (resendResponse.status === 429) {
-        return jsonError(res, 429, "The email provider limit has been reached. The request was not marked as contacted.");
+      console.error("Resend request failed", { status: resendResponse.status, providerData });
+
+      const providerError = providerData?.message || providerData?.error?.message || "";
+      let userFriendlyError = "The email provider could not accept this message.";
+
+      if (resendResponse.status === 401) userFriendlyError = "Invalid Resend API Key. Check Vercel environment variables.";
+      if (resendResponse.status === 403) userFriendlyError = "Resend permission denied. Ensure the sender is verified.";
+      if (resendResponse.status === 422) {
+        if (providerError.toLowerCase().includes("domain")) {
+          userFriendlyError = "Domain not verified in Resend. On the free plan, you can only send to your own account email.";
+        } else {
+          userFriendlyError = `Resend validation error: ${providerError}`;
+        }
       }
-      return jsonError(res, 502, "The email provider could not accept this message. The request was not marked as contacted.");
+      if (resendResponse.status === 429) userFriendlyError = "The email provider limit has been reached.";
+
+      return jsonError(res, resendResponse.status, `${userFriendlyError} The request was not marked as contacted.`);
     }
 
     return res.status(200).json({ success: true, id: providerData?.id || null });
