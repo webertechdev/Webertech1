@@ -16,8 +16,8 @@ import Electronics from "./pages/Electronics";
 import Cyber         from "./pages/StubPage";
 import CyberHomeEnhanced from "./pages/cyber/CyberHomeEnhanced";
 import CyberHome           from "./pages/StubPage";
-import LegalDocuments      from "./pages/StubPage";
-import LegalDocumentDetail from "./pages/StubPage";
+import LegalDocuments      from "./pages/cyber/LegalDocuments";
+import LegalDocumentDetail from "./pages/cyber/LegalDocumentDetail";
 import Government from "./pages/cyber/Government";
 import Business from "./pages/cyber/Business";
 import Printing from "./pages/cyber/Printing";
@@ -99,7 +99,7 @@ export default function App() {
         <Route path="/electronics" element={<Electronics />} />
         <Route path="/cyber"                            element={<CyberHomeEnhanced />} />
         <Route path="/cyber/legal-documents"               element={<LegalDocuments />} />
-        <Route path="/cyber/legal-documents/:slug"         element={<LegalDocumentDetail />} />
+        <Route path="/cyber/legal-documents/:id"           element={<LegalDocumentDetail />} />
         <Route path="/cyber/government"                    element={<Government />} />
         <Route path="/cyber/business"                      element={<Business />} />
         <Route path="/cyber/printing"                      element={<Printing />} />

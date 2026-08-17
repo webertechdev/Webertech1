@@ -19,37 +19,52 @@ export default function DocumentPreview({ fileUrl, fileName, watermark = true })
     const generatePreview = async () => {
       try {
         setLoading(true);
-        
+
         // Check file type
         const ext = fileName?.toLowerCase().split(".").pop();
-        
+
         if (ext === "pdf") {
           // PDF preview
-          const bytes = await getBytes(ref(storage, fileUrl));
-          const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+          let data;
+          if (fileUrl.startsWith("http")) {
+            // External URL
+            const response = await fetch(fileUrl);
+            const arrayBuffer = await response.arrayBuffer();
+            data = new Uint8Array(arrayBuffer);
+          } else {
+            // Firebase Storage path
+            const bytes = await getBytes(ref(storage, fileUrl));
+            data = bytes;
+          }
+          const pdf = await pdfjsLib.getDocument({ data }).promise;
           const page = await pdf.getPage(1);
           const scale = 1.5;
           const viewport = page.getViewport({ scale });
-          
+
           const canvas = document.createElement("canvas");
           const context = canvas.getContext("2d");
           canvas.width = viewport.width;
           canvas.height = viewport.height;
-          
+
           await page.render({ canvasContext: context, viewport }).promise;
-          
+
           // Add watermark
           if (watermark) {
             addWatermark(context, canvas.width, canvas.height);
           }
-          
+
           setPreviewUrl(canvas.toDataURL());
         } else if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) {
           // Image preview
-          const bytes = await getBytes(ref(storage, fileUrl));
-          const blob = new Blob([bytes]);
-          const url = URL.createObjectURL(blob);
-          
+          let url;
+          if (fileUrl.startsWith("http")) {
+            url = fileUrl;
+          } else {
+            const bytes = await getBytes(ref(storage, fileUrl));
+            const blob = new Blob([bytes]);
+            url = URL.createObjectURL(blob);
+          }
+
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement("canvas");
@@ -57,12 +72,12 @@ export default function DocumentPreview({ fileUrl, fileName, watermark = true })
             canvas.width = img.width;
             canvas.height = img.height;
             context.drawImage(img, 0, 0);
-            
+
             // Add watermark
             if (watermark) {
               addWatermark(context, canvas.width, canvas.height);
             }
-            
+
             setPreviewUrl(canvas.toDataURL());
             URL.revokeObjectURL(url);
           };
@@ -94,12 +109,12 @@ export default function DocumentPreview({ fileUrl, fileName, watermark = true })
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.globalAlpha = 0.15;
-    
+
     // Rotate text
     context.translate(width / 2, height / 2);
     context.rotate(-Math.PI / 4);
     context.fillText("webertech.co.ke", 0, 0);
-    
+
     context.restore();
   };
 
