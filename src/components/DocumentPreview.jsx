@@ -105,10 +105,10 @@ export default function DocumentPreview({ fileUrl, fileName, watermark = true })
     // Watermark text
     context.save();
     context.font = `bold ${Math.max(40, width / 8)}px Arial`;
-    context.fillStyle = "rgba(0, 0, 0, 0.15)";
+    context.fillStyle = "rgba(0, 0, 0, 0.25)";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.globalAlpha = 0.15;
+    context.globalAlpha = 0.3;
 
     // Rotate text
     context.translate(width / 2, height / 2);

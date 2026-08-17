@@ -127,7 +127,7 @@ const SERVICES = [
 const FAQS = [
   { q:"How do I buy Safaricom bundles?",        a:"Visit bundles.webertech.co.ke, pick your bundle, enter your number, pay via M-PESA STK Push — bundle delivered in under 10 seconds." },
   { q:"Can I buy bundles for another number?",  a:"Yes! Select 'Buy for other number' on the bundles page and enter any Safaricom number. Perfect for family and friends." },
-  { q:"What services does WeberTech offer?",    a:"WeberTech offers Safaricom Bundles, Dev Services, Cyber/eCitizen services, Academy training, Electronics, and Hustle KE opportunities — all from Mombasa, Kenya." },
+  { q:"What services does WeberTech offer?",    a:"WeberTech offers Safaricom Bundles, Dev Services, Cyber/eCitizen services, Academy training, Electronics, and Hustle KE opportunities — all from Chuka, Kenya." },
   { q:"How do I contact support?",              a:"WhatsApp us on +254 722 508 904 or email support@webertech.co.ke. Our AI chat is also available 24/7 — click the green tab on the right side of this page." },
   { q:"Are bundle payments secure?",            a:"100% secure. All payments go through Safaricom's official M-PESA STK Push. We never store your PIN." },
   { q:"What is Hustle KE?",                     a:"Hustle KE is our reseller & affiliate program. Earn commissions on bundles, get help with AGPO registration, business plans, and weekly M-PESA payouts." },
@@ -562,7 +562,7 @@ export default function Home() {
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))", gap:18 }}>
             {[
-              { name:"Amina H.",  loc:"Mombasa", text:"WeberTech bundle delivery ni ya haraka sana — chini ya sekunde kumi! Ndiyo bora Kenya." },
+              { name:"Amina H.",  loc:"Chuka", text:"WeberTech bundle delivery ni ya haraka sana — chini ya sekunde kumi! Ndiyo bora Kenya." },
               { name:"Brian M.",  loc:"Nairobi",  text:"Best digital platform in Kenya. Every service I need is right here — fair prices, always reliable." },
               { name:"John K.",   loc:"Kisumu",   text:"WeberTech Dev wamenitengenezea website nzuri sana. Bei nafuu, kazi bora." },
               { name:"Fatuma A.", loc:"Malindi",  text:"Academy courses zimesaidia pakubwa. Sasa naweza kutengeneza websites na kupata pesa." },

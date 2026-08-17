@@ -123,7 +123,7 @@ const SERVICES = [
 const FAQS = [
   { q: "How do I buy Safaricom bundles?", a: "Visit bundles.webertech.co.ke, choose your bundle, enter your number, pay via M-PESA STK Push and receive your bundle in under 10 seconds." },
   { q: "Can I buy a bundle for another number?", a: "Yes! On the bundles page, select 'Buy for other number' and enter the recipient's Safaricom number. Perfect for gifting bundles to family and friends." },
-  { q: "What services does WeberTech offer?", a: "WeberTech offers Safaricom Bundles, Web Dev Services, Cyber Services (printing, eCitizen, KRA), Academy training, Electronics, and Hustle opportunities — all from Mombasa, Kenya." },
+  { q: "What services does WeberTech offer?", a: "WeberTech offers Safaricom Bundles, Web Dev Services, Cyber Services (printing, eCitizen, KRA), Academy training, Electronics, and Hustle opportunities — all from Chuka, Kenya." },
   { q: "How do I contact WeberTech support?", a: "WhatsApp us on +254 722 508 904 or email support@webertech.co.ke. Our AI chat is also available 24/7 on this page — click the green tab on the right." },
   { q: "Are payments secure?", a: "All bundle payments go through Safaricom's official M-PESA STK Push. We never store your M-PESA PIN. 100% secure." },
   { q: "How does the Academy work?", a: "Join our waitlist at webertech.co.ke/academy. We offer courses in web development, trading, design, and digital marketing with real certificates upon completion." },
@@ -430,7 +430,7 @@ export default function Home() {
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))", gap:18 }}>
               {[
-                { name:"Amina H.",  loc:"Mombasa", text:"WeberTech bundle delivery ni ya haraka sana — sekunde kumi! Ndiyo bora Kenya." },
+                { name:"Amina H.",  loc:"Chuka", text:"WeberTech bundle delivery ni ya haraka sana — sekunde kumi! Ndiyo bora Kenya." },
                 { name:"Brian M.",  loc:"Nairobi",  text:"Best platform for digital services in Kenya. Fair prices, always reliable." },
                 { name:"John K.",   loc:"Kisumu",   text:"Nimetengeneza website yangu kwa WeberTech Dev. Wanafanya kazi nzuri sana." },
                 { name:"Fatuma A.", loc:"Malindi",  text:"Academy courses zimesaidia. Sasa naweza kutengeneza websites kwa customers." },

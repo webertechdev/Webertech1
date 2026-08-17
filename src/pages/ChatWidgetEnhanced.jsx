@@ -8,7 +8,8 @@ import {
   doc, setDoc, getDoc, onSnapshot, query, orderBy
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { toast, Toaster } from "react-hot-toast";
 
 const BUNDLES_URL  = "https://bundles.webertech.co.ke";
 const WHATSAPP_URL = "https://wa.me/254722508904";
@@ -129,6 +130,10 @@ export default function ChatWidgetEnhanced() {
   const [unread,    setUnread]    = useState(true);
   const [sessionId, setSessionId] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [authMode,    setAuthMode]    = useState("login"); // "login" | "register"
+  const [authEmail,   setAuthEmail]   = useState("");
+  const [authPass,    setAuthPass]    = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
   const bottomRef   = useRef(null);
   const inputRef    = useRef(null);
   const cssInjected = useRef(false);
@@ -197,7 +202,7 @@ export default function ChatWidgetEnhanced() {
         sessionId,
         userId:       currentUser?.uid || null,
         userEmail:    currentUser?.email || null,
-        customerName: currentUser?.displayName || currentUser?.email?.split("@")[0] || "Anonymous",
+        customerName: currentUser?.displayName || (currentUser?.email ? currentUser.email.split("@")[0] : "Anonymous"),
         lastMessage:  text,
         lang,
         updatedAt:    serverTimestamp(),
@@ -300,8 +305,36 @@ export default function ChatWidgetEnhanced() {
 
   const showChips = msgs.length <= 1 && !loading;
 
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    try {
+      if (authMode === "login") {
+        await signInWithEmailAndPassword(auth, authEmail, authPass);
+        toast.success("Welcome back!");
+      } else {
+        await createUserWithEmailAndPassword(auth, authEmail, authPass);
+        toast.success("Account created!");
+      }
+    } catch (err) {
+      toast.error(err.message);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleGoogleAuth = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+      toast.success("Welcome!");
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   return (
     <>
+      <Toaster position="top-right" />
       {(open || closing) && <div className="wt-overlay" onClick={closeChat} />}
       {(open || closing) && (
         <div className={`wt-sidebar ${closing ? "wt-close" : "wt-open"}`}>
@@ -339,45 +372,96 @@ export default function ChatWidgetEnhanced() {
             </div>
           </div>
 
-          <div className="wt-msgs">
-            {msgs.filter(m => m && m.text).map(m => (
-              <div key={m.id} style={{ display:"flex", flexDirection:"column", alignItems: m.role==="user" ? "flex-end" : "flex-start" }}>
-                <div className={`wt-bub ${m.role==="user" ? "wt-user" : "wt-ai"}`}>
-                  {(m.text || "").split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{renderMessageLine(line, i)}</p>)}
-                  {m.pdfData && (
-                    <button className="wt-pdf-btn" onClick={() => handleGeneratePDF(m.pdfData)}>
-                      📄 Download {m.pdfData.type} PDF
-                    </button>
-                  )}
-                </div>
-                <div className="wt-time" style={{ textAlign: m.role==="user" ? "right" : "left" }}>{m.time}</div>
+          {!currentUser ? (
+            <div style={{ flex: 1, padding: 30, display: "flex", flexDirection: "column", justifyContent: "center", background: "#f9fafb" }}>
+              <div style={{ textAlign: "center", marginBottom: 24 }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>👤</div>
+                <h3 style={{ fontWeight: 800, fontSize: 20, color: "#111827", marginBottom: 6 }}>Welcome to WeberAI</h3>
+                <p style={{ color: "#6b7280", fontSize: 13 }}>Please log in to track your assistance and orders.</p>
               </div>
-            ))}
-            {loading && <div className="wt-typing"><span/><span/><span/></div>}
-            <div ref={bottomRef} />
-          </div>
 
-          {showChips && (
-            <div className="wt-chips">
-              {QUICK[lang].map(q => <button key={q} className="wt-chip" onClick={() => send(q)}>{q}</button>)}
+              <form onSubmit={handleAuth} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <input
+                  type="email"
+                  placeholder="Email Address"
+                  required
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14 }}
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  required
+                  value={authPass}
+                  onChange={e => setAuthPass(e.target.value)}
+                  style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14 }}
+                />
+                <button type="submit" disabled={authLoading} style={{ padding: "12px", borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
+                  {authLoading ? "Processing..." : (authMode === "login" ? "Log In" : "Create Account")}
+                </button>
+              </form>
+
+              <div style={{ position: "relative", textAlign: "center", margin: "20px 0" }}>
+                <span style={{ background: "#f9fafb", padding: "0 10px", fontSize: 11, color: "#9ca3af", position: "relative", zIndex: 1 }}>or</span>
+                <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: "1px", background: "#e5e7eb" }} />
+              </div>
+
+              <button onClick={handleGoogleAuth} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 10, border: "1.5px solid #e5e7eb", background: "#fff", color: "#374151", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" style={{ width: 16 }} />
+                Google
+              </button>
+
+              <p style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#6b7280" }}>
+                {authMode === "login" ? "New to WeberTech?" : "Already have an account?"}{" "}
+                <button onClick={() => setAuthMode(authMode === "login" ? "register" : "login")} style={{ background: "none", border: "none", color: "#16a34a", fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                  {authMode === "login" ? "Sign up" : "Log in"}
+                </button>
+              </p>
             </div>
-          )}
+          ) : (
+            <>
+              <div className="wt-msgs">
+                {msgs.filter(m => m && m.text).map(m => (
+                  <div key={m.id} style={{ display:"flex", flexDirection:"column", alignItems: m.role==="user" ? "flex-end" : "flex-start" }}>
+                    <div className={`wt-bub ${m.role==="user" ? "wt-user" : "wt-ai"}`}>
+                      {(m.text || "").split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{renderMessageLine(line, i)}</p>)}
+                      {m.pdfData && (
+                        <button className="wt-pdf-btn" onClick={() => handleGeneratePDF(m.pdfData)}>
+                          📄 Download {m.pdfData.type} PDF
+                        </button>
+                      )}
+                    </div>
+                    <div className="wt-time" style={{ textAlign: m.role==="user" ? "right" : "left" }}>{m.time}</div>
+                  </div>
+                ))}
+                {loading && <div className="wt-typing"><span/><span/><span/></div>}
+                <div ref={bottomRef} />
+              </div>
 
-          <div className="wt-input-row">
-            <textarea
-              ref={inputRef}
-              className="wt-input"
-              rows={1}
-              placeholder="Ask WeberAI anything..."
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKey}
-              disabled={loading}
-            />
-            <button className="wt-send" onClick={() => send()} disabled={loading || !input.trim()}>
-              {loading ? <span className="wt-spin">⟳</span> : "➤"}
-            </button>
-          </div>
+              {showChips && (
+                <div className="wt-chips">
+                  {QUICK[lang].map(q => <button key={q} className="wt-chip" onClick={() => send(q)}>{q}</button>)}
+                </div>
+              )}
+
+              <div className="wt-input-row">
+                <textarea
+                  ref={inputRef}
+                  className="wt-input"
+                  rows={1}
+                  placeholder="Ask WeberAI anything..."
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKey}
+                  disabled={loading}
+                />
+                <button className="wt-send" onClick={() => send()} disabled={loading || !input.trim()}>
+                  {loading ? <span className="wt-spin">⟳</span> : "➤"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
