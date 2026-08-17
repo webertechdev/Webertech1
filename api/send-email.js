@@ -69,8 +69,8 @@ export default async function handler(req, res) {
       return jsonError(res, 400, "A message between 1 and 20,000 characters is required.");
     }
 
-    const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.RESEND_FROM_EMAIL;
+    const apiKey = process.env.RESEND_API_KEY?.trim();
+    const from = process.env.RESEND_FROM_EMAIL?.trim();
     if (!apiKey || !from) {
       return jsonError(res, 503, "Email sending is not configured. Add RESEND_API_KEY and RESEND_FROM_EMAIL in Vercel.");
     }
@@ -83,32 +83,43 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         from,
-        to: [recipient.trim()],
+        to: recipient.trim(),
         subject: subject.trim(),
         text: message.trim(),
         html: `<div style="font-family:Arial,sans-serif;line-height:1.6;white-space:pre-wrap">${escapeHtml(message.trim())}</div>`,
       }),
     });
 
-    const providerData = await resendResponse.json().catch(() => ({}));
+    const providerText = await resendResponse.text();
+    let providerData = {};
+    try {
+      providerData = providerText ? JSON.parse(providerText) : {};
+    } catch {
+      providerData = { message: providerText };
+    }
     if (!resendResponse.ok) {
-      console.error("Resend request failed", { status: resendResponse.status, providerData });
+      console.error("Resend request failed", {
+        status: resendResponse.status,
+        name: providerData?.name || "",
+        message: providerData?.message || providerData?.error?.message || "",
+      });
 
-      const providerError = providerData?.message || providerData?.error?.message || "";
+      const providerError = String(providerData?.message || providerData?.error?.message || "").trim();
       let userFriendlyError = "The email provider could not accept this message.";
 
       if (resendResponse.status === 401) userFriendlyError = "Invalid Resend API Key. Check Vercel environment variables.";
-      if (resendResponse.status === 403) userFriendlyError = "Resend permission denied. Ensure the sender is verified.";
+      if (resendResponse.status === 403) userFriendlyError = "Resend permission denied. Verify the sender domain and sender address in Resend.";
       if (resendResponse.status === 422) {
-        if (providerError.toLowerCase().includes("domain")) {
-          userFriendlyError = "Domain not verified in Resend. On the free plan, you can only send to your own account email.";
+        if (/domain|sender|from/i.test(providerError)) {
+          userFriendlyError = "Resend rejected the sender. Verify a WeberTech domain in Resend and set RESEND_FROM_EMAIL to that verified address. The onboarding@resend.dev sender is intended for account-owner testing only.";
         } else {
-          userFriendlyError = `Resend validation error: ${providerError}`;
+          userFriendlyError = `Resend validation error: ${providerError || "check the recipient and message fields"}`;
         }
       }
       if (resendResponse.status === 429) userFriendlyError = "The email provider limit has been reached.";
 
-      return jsonError(res, resendResponse.status, `${userFriendlyError} The request was not marked as contacted.`);
+      const detail = providerError ? ` Provider detail: ${providerError}` : "";
+      return jsonError(res, resendResponse.status, `${userFriendlyError}${detail} The request was not marked as contacted.`);
     }
 
     return res.status(200).json({ success: true, id: providerData?.id || null });

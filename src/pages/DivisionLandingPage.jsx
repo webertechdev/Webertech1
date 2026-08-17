@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../config/firebase";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 
@@ -59,10 +62,63 @@ const DIVISIONS = {
     steps: ["Share your idea", "Receive a clear scope and estimate", "Review progress at each milestone", "Launch and keep improving"],
     cta: "Request a development quote",
   },
+  hustle: {
+    badge: "WEBERTECH HUSTLE KE",
+    icon: "🔥",
+    title: "Turn practical ideas into income.",
+    description: "Business guidance, reseller opportunities, and digital support for Kenyans building their next source of income.",
+    gradient: "linear-gradient(135deg, #431407 0%, #9a3412 52%, #ea580c 100%)",
+    accent: "#fed7aa",
+    soft: "rgba(254, 215, 170, 0.18)",
+    offers: [
+      { icon: "📦", title: "Reseller Opportunities", text: "Explore practical ways to earn by connecting customers with useful WeberTech services." },
+      { icon: "📑", title: "Business Plans", text: "Get clear, professional business plans and profiles for your next opportunity." },
+      { icon: "🏛️", title: "AGPO Guidance", text: "Understand the steps and documents needed to prepare for public procurement opportunities." },
+      { icon: "💰", title: "Digital Income Support", text: "Learn how digital services, customer support, and simple systems can support your hustle." },
+    ],
+    highlights: ["Practical Kenyan context", "Clear next steps", "Support for beginners", "Opportunities and guidance in one place"],
+    steps: ["Tell us your goal", "Choose a support path", "Get the documents or guidance you need", "Take the next step with confidence"],
+    cta: "Start your Hustle KE journey",
+  },
 };
 
 function DivisionLandingPage({ division }) {
   const content = DIVISIONS[division] || DIVISIONS.academy;
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    const loadProducts = async () => {
+      try {
+        const response = await fetch("/api/public-products");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Published catalog unavailable");
+        const matching = (payload.products || []).filter(item => {
+          const category = String(item.division || item.category || "").toLowerCase();
+          return category.includes(division) || (division === "cyber" && (category.includes("legal") || item.type === "legal-document"));
+        });
+        if (active) setProducts(matching);
+      } catch (error) {
+        console.warn("Division product catalog unavailable:", error);
+        // Keep a local Firestore fallback for older/local deployments.
+        try {
+          const snapshot = await getDocs(collection(db, "products"));
+          const matching = snapshot.docs
+            .map(item => ({ id: item.id, ...item.data() }))
+            .filter(item => item.published !== false)
+            .filter(item => {
+              const category = String(item.division || item.category || "").toLowerCase();
+              return category.includes(division) || (division === "cyber" && (category.includes("legal") || item.type === "legal-document"));
+            });
+          if (active) setProducts(matching);
+        } catch (legacyError) {
+          console.warn("Legacy division catalog unavailable:", legacyError);
+        }
+      }
+    };
+    loadProducts();
+    return () => { active = false; };
+  }, [division]);
 
   return (
     <div className="division-page" style={{ "--division-accent": content.accent, "--division-soft": content.soft }}>
@@ -148,6 +204,26 @@ function DivisionLandingPage({ division }) {
             ))}
           </div>
         </section>
+
+        {products.length > 0 && (
+          <section className="division-section" style={{ paddingTop: 0 }}>
+            <div className="division-section-head">
+              <p className="division-eyebrow">Available now</p>
+              <h2>Documents and products for this division.</h2>
+              <p>Preview the watermarked file, review the details, and continue to secure payment when you are ready.</p>
+            </div>
+            <div className="division-offers">
+              {products.map(product => (
+                <Link key={product.id} to={division === "cyber" ? `/cyber/legal-documents/${product.slug || product.id}` : `/cyber/legal-documents/${product.slug || product.id}`} className="division-offer" style={{ textDecoration: "none", color: "inherit" }}>
+                  <div className="division-offer-icon">{product.icon || "📄"}</div>
+                  <h3>{product.title}</h3>
+                  <p>{product.description || "WeberTech product available online."}</p>
+                  <div style={{ marginTop: 14, color: "#16a34a", fontWeight: 800 }}>KES {Number(product.price || 0).toLocaleString()} · Preview & buy →</div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="division-section" style={{ paddingTop: 0 }}>
           <div className="division-split">

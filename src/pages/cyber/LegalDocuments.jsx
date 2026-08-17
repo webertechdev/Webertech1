@@ -1,41 +1,106 @@
 // src/pages/cyber/LegalDocuments.jsx
 import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
-import { CATEGORIES, legalDocuments as seedDocs } from "./data/legalDocumentsSeed";
+import { CATEGORIES, LEGAL_DOCUMENTS_SEED as seedDocs } from "./data/legalDocumentsSeed";
+
+const slugify = (value = "") => String(value)
+  .toLowerCase()
+  .trim()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "");
+
+const normalizeDocument = (record, id) => {
+  const category = String(record.category || record.division || "cyber").toLowerCase();
+  const isCyberDocument = category.includes("cyber") || category.includes("legal") || record.type === "legal-document" || record.division === "cyber";
+  return {
+    id: id || record.id || slugify(record.title),
+    ...record,
+    slug: record.slug || id || slugify(record.title),
+    category,
+    type: record.type || (isCyberDocument ? "legal-document" : "service"),
+    published: record.published !== false,
+  };
+};
+
+function belongsToCategory(document, categoryFilter) {
+  if (categoryFilter === "all") return true;
+  const haystack = [
+    document.category,
+    document.subcategory,
+    document.documentCategory,
+    document.title,
+    document.description,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (categoryFilter === "legal") return document.type === "legal-document" || haystack.includes("legal") || haystack.includes("business") || haystack.includes("cyber");
+  if (categoryFilter === "vehicle") return /vehicle|car|motorcycle|transport|sale agreement/.test(haystack);
+  return haystack.includes(categoryFilter);
+}
+
+async function loadCatalog() {
+  const byId = new Map(seedDocs.map(item => [item.id, normalizeDocument(item, item.id)]));
+
+  // Customer pages use the server-side catalog so Firestore rules can keep
+  // products protected while published products remain publicly discoverable.
+  try {
+    const response = await fetch("/api/public-products");
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Published catalog unavailable");
+    (payload.products || []).forEach(item => {
+      const normalized = normalizeDocument(item, item.id);
+      if (normalized.published !== false) byId.set(normalized.id, normalized);
+    });
+  } catch (error) {
+    console.warn("Published product API unavailable; trying legacy Firestore reads", error);
+
+    // Compatibility fallback for local development and older deployments.
+    for (const source of ["products", "cyber_documents"]) {
+      try {
+        const snapshot = await getDocs(collection(db, source));
+        snapshot.docs.forEach(item => {
+          const normalized = normalizeDocument(item.data(), item.id);
+          if (normalized.published !== false) byId.set(normalized.id, normalized);
+        });
+      } catch (legacyError) {
+        console.warn(`Unable to read ${source}; continuing with available catalog`, legacyError);
+      }
+    }
+  }
+
+  return Array.from(byId.values()).filter(document => document.published);
+}
 
 export default function LegalDocuments() {
   const [searchParams] = useSearchParams();
   const categoryFilter = searchParams.get("category") || "all";
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    let active = true;
     const fetchDocs = async () => {
+      setLoading(true);
+      setError("");
       try {
-        setLoading(true);
-        // Combine seed data with Firestore documents
-        const snap = await getDocs(collection(db, "cyber_documents"));
-        const firestoreDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        
-        const allDocs = [...seedDocs, ...firestoreDocs];
-        
-        if (categoryFilter === "all") {
-          setDocuments(allDocs);
-        } else {
-          setDocuments(allDocs.filter(d => d.category?.toLowerCase() === categoryFilter.toLowerCase()));
+        const allDocuments = await loadCatalog();
+        if (active) setDocuments(allDocuments.filter(document => belongsToCategory(document, categoryFilter)));
+      } catch (loadError) {
+        console.error("Failed to fetch documents:", loadError);
+        if (active) {
+          setDocuments(seedDocs.map(item => normalizeDocument(item, item.id)).filter(document => belongsToCategory(document, categoryFilter)));
+          setError("Showing the starter catalog while the live catalog reconnects.");
         }
-      } catch (err) {
-        console.error("Failed to fetch documents:", err);
-        setDocuments(seedDocs); // Fallback to seed data
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     fetchDocs();
+    return () => { active = false; };
   }, [categoryFilter]);
 
   return (
@@ -45,33 +110,32 @@ export default function LegalDocuments() {
         .ld-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 16px; overflow: hidden; transition: transform .2s, box-shadow .2s; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
         .ld-card:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,0.08); }
         .ld-content { padding: 20px; flex-grow: 1; }
-        .ld-footer { padding: 16px 20px; background: #f9fafb; border-top: 1.5px solid #e5e7eb; display: flex; justifyContent: space-between; alignItems: center; }
-        .ld-category-btn { padding: 8px 16px; border-radius: 99px; border: 1.5px solid #e5e7eb; background: #fff; color: #4b5563; font-weight: 600; font-size: 14px; text-decoration: none; transition: all .2s; }
+        .ld-footer { padding: 16px 20px; background: #f9fafb; border-top: 1.5px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .ld-category-btn { padding: 8px 16px; border-radius: 99px; border: 1.5px solid #e5e7eb; background: #fff; color: #4b5563; font-weight: 600; font-size: 14px; text-decoration: none; transition: all .2s; white-space: nowrap; }
         .ld-category-btn.active { background: #16a34a; border-color: #16a34a; color: #fff; }
       `}</style>
 
       <Navbar />
-      
       <div style={{ paddingTop: 100, paddingBottom: 80, background: "#f9fafb", minHeight: "80vh" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px" }}>
-          
           <div style={{ marginBottom: 40 }}>
             <h1 style={{ fontSize: 36, fontWeight: 900, color: "#111827", marginBottom: 12 }}>Legal & Business Documents</h1>
             <p style={{ fontSize: 18, color: "#6b7280" }}>Professional, ready-to-use templates for every need in Kenya.</p>
           </div>
 
-          {/* Categories */}
           <div style={{ display: "flex", gap: 12, marginBottom: 40, overflowX: "auto", paddingBottom: 8 }}>
-            {CATEGORIES.map(cat => (
-              <Link 
-                key={cat.id} 
-                to={`/cyber/legal-documents?category=${cat.id}`}
-                className={`ld-category-btn ${categoryFilter === cat.id ? "active" : ""}`}
+            {CATEGORIES.map(category => (
+              <Link
+                key={category.id}
+                to={`/cyber/legal-documents?category=${category.id}`}
+                className={`ld-category-btn ${categoryFilter === category.id ? "active" : ""}`}
               >
-                {cat.icon} {cat.name}
+                {category.emoji} {category.label}
               </Link>
             ))}
           </div>
+
+          {error && <div style={{ marginBottom: 20, padding: 14, borderRadius: 12, background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa" }}>{error}</div>}
 
           {loading ? (
             <div style={{ textAlign: "center", padding: "60px 0" }}>
@@ -80,15 +144,16 @@ export default function LegalDocuments() {
             </div>
           ) : (
             <div className="ld-grid">
-              {documents.map(doc => (
-                <Link key={doc.id} to={`/cyber/legal-documents/${doc.id}`} className="ld-card">
+              {documents.map(document => (
+                <Link key={document.id} to={`/cyber/legal-documents/${document.slug || document.id}`} className="ld-card">
                   <div className="ld-content">
-                    <div style={{ fontSize: 32, marginBottom: 16 }}>{doc.icon || "📄"}</div>
-                    <h3 style={{ fontSize: 20, fontWeight: 800, color: "#111827", marginBottom: 8 }}>{doc.title}</h3>
-                    <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, marginBottom: 0 }}>{doc.description}</p>
+                    <div style={{ fontSize: 32, marginBottom: 16 }}>{document.icon || "📄"}</div>
+                    <h3 style={{ fontSize: 20, fontWeight: 800, color: "#111827", marginBottom: 8 }}>{document.title}</h3>
+                    <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, marginBottom: 14 }}>{document.description || "Ready-to-use WeberTech digital document."}</p>
+                    {document.fileUrl ? <span style={{ color: "#16a34a", fontSize: 12, fontWeight: 800 }}>◉ Watermarked preview available</span> : <span style={{ color: "#9ca3af", fontSize: 12 }}>Preview coming soon</span>}
                   </div>
                   <div className="ld-footer">
-                    <div style={{ fontWeight: 800, color: "#111827" }}>KES {doc.price}</div>
+                    <div style={{ fontWeight: 800, color: "#111827" }}>KES {Number(document.price || 0).toLocaleString()}</div>
                     <div style={{ color: "#16a34a", fontWeight: 700, fontSize: 14 }}>View & Buy →</div>
                   </div>
                 </Link>
@@ -100,10 +165,8 @@ export default function LegalDocuments() {
               )}
             </div>
           )}
-
         </div>
       </div>
-
       <Footer />
     </>
   );
