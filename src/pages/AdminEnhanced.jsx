@@ -3,7 +3,7 @@
 // Tabs: Overview | Orders | Payments | Customers | Products | AI Training | Live Chats | Analytics | Settings
 
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, doc, updateDoc, orderBy, query, where, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, orderBy, query, where, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
@@ -19,6 +19,7 @@ export default function AdminEnhanced() {
   const [transactions, setTransactions] = useState([]);
   const [activeChats, setActiveChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [adminReply, setAdminReply] = useState("");
   const [aiKnowledge, setAiKnowledge] = useState("");
@@ -27,50 +28,57 @@ export default function AdminEnhanced() {
   
   const chatEndRef = useRef(null);
 
-  // Load all static data
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [ordersSnap, paymentsSnap, customersSnap, productsSnap, transactionsSnap] = await Promise.all([
-          getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"))),
-          getDocs(query(collection(db, "payments"), orderBy("createdAt", "desc"))),
-          getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"))),
-          getDocs(query(collection(db, "products"), orderBy("createdAt", "desc"))),
-          getDocs(query(collection(db, "transactions"), orderBy("createdAt", "desc"))),
-        ]);
-        setOrders(ordersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setCustomers(customersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setProducts(productsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setTransactions(transactionsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (err) {
-        toast.error("Failed to load admin data");
-      }
+  const loadData = async () => {
+    setLoading(true);
+    setRefreshing(true);
+    try {
+      const [ordersSnap, paymentsSnap, customersSnap, productsSnap, transactionsSnap, chatsSnap] = await Promise.all([
+        getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc"))),
+        getDocs(query(collection(db, "payments"), orderBy("createdAt", "desc"))),
+        getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"))),
+        getDocs(query(collection(db, "products"), orderBy("createdAt", "desc"))),
+        getDocs(query(collection(db, "transactions"), orderBy("createdAt", "desc"))),
+        getDocs(collection(db, "chats")),
+      ]);
+      setOrders(ordersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setCustomers(customersSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setProducts(productsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setTransactions(transactionsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setActiveChats(chatsSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0)));
+    } catch (err) {
+      console.error("Failed to load admin data:", err);
+      toast.error("Failed to load admin data. Use refresh to try again.");
+    } finally {
       setLoading(false);
-    };
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
 
-  // Real-time Chat Monitoring
-  useEffect(() => {
-    const q = query(collection(db, "chats"), orderBy("updatedAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      setActiveChats(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsub();
-  }, []);
-
-  // Load specific chat messages
-  useEffect(() => {
-    if (!selectedChat) return;
-    const q = query(collection(db, "chats", selectedChat.id, "messages"), orderBy("timestamp", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
+  const refreshChatMessages = async (chat = selectedChat) => {
+    if (!chat) {
+      setChatMessages([]);
+      return;
+    }
+    try {
+      const snap = await getDocs(query(collection(db, "chats", chat.id, "messages"), orderBy("timestamp", "asc")));
       setChatMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    });
-    return () => unsub();
-  }, [selectedChat]);
+      requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+    } catch (err) {
+      console.error("Failed to refresh chat messages:", err);
+      toast.error("Failed to load chat messages. Try refresh again.");
+    }
+  };
+
+  useEffect(() => {
+    refreshChatMessages(selectedChat);
+  }, [selectedChat?.id]);
 
   const sendAdminReply = async () => {
     if (!adminReply.trim() || !selectedChat) return;
@@ -144,9 +152,14 @@ export default function AdminEnhanced() {
 
       <div style={{ paddingTop: 64, background: "#f9fafb", minHeight: "100vh" }}>
         <div style={{ background: "#0f172a", padding: "32px 20px" }}>
-          <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-            <h1 style={{ color: "#fff", fontWeight: 900, fontSize: 32 }}>WeberTech Control Center</h1>
-            <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Platform-wide monitoring, AI training, and support takeover</p>
+          <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+            <div>
+              <h1 style={{ color: "#fff", fontWeight: 900, fontSize: 32 }}>WeberTech Control Center</h1>
+              <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>Platform-wide monitoring, AI training, and support takeover</p>
+            </div>
+            <button onClick={loadData} disabled={refreshing} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", fontWeight: 700, cursor: refreshing ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+              {refreshing ? "Refreshing…" : "↻ Refresh data"}
+            </button>
           </div>
         </div>
 
@@ -189,7 +202,10 @@ export default function AdminEnhanced() {
             {tab === "chats" && (
               <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20, background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 16, height: 600 }}>
                 <div style={{ borderRight: "1.5px solid #f3f4f6", overflowY: "auto" }}>
-                  <div style={{ padding: 16, fontWeight: 700, borderBottom: "1.5px solid #f3f4f6" }}>Active Sessions</div>
+                  <div style={{ padding: 16, borderBottom: "1.5px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontWeight: 700 }}>Active Sessions ({activeChats.length})</span>
+                    <button onClick={loadData} disabled={refreshing} aria-label="Refresh active chats" style={{ border: "none", background: "#f0fdf4", color: "#15803d", borderRadius: 8, padding: "6px 9px", cursor: refreshing ? "wait" : "pointer" }}>{refreshing ? "…" : "↻"}</button>
+                  </div>
                   {activeChats.map(c => (
                     <div key={c.id} className={`chat-list-item ${selectedChat?.id === c.id ? "active" : ""}`} onClick={() => setSelectedChat(c)}>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{c.customerName || "Anonymous"}</div>
@@ -202,7 +218,10 @@ export default function AdminEnhanced() {
                     <>
                       <div style={{ padding: 16, borderBottom: "1.5px solid #f3f4f6", display: "flex", justifyContent: "space-between" }}>
                         <span style={{ fontWeight: 700 }}>Chat with {selectedChat.customerName}</span>
-                        <span style={{ fontSize: 12, color: "#16a34a" }}>{selectedChat.adminTakeover ? "● Admin Controlled" : "● AI Responding"}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 12, color: "#16a34a" }}>{selectedChat.adminTakeover ? "● Admin Controlled" : "● AI Responding"}</span>
+                          <button onClick={() => refreshChatMessages(selectedChat)} aria-label="Refresh selected chat" style={{ border: "none", background: "#f0fdf4", color: "#15803d", borderRadius: 8, padding: "6px 9px", cursor: "pointer" }}>↻</button>
+                        </div>
                       </div>
                       <div style={{ flex: 1, padding: 20, overflowY: "auto", display: "flex", flexDirection: "column" }}>
                         {chatMessages.map(m => (

@@ -313,6 +313,7 @@ export default function UnifiedControlCenterV3() {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [refreshingChat, setRefreshingChat] = useState(false);
   const [adminReply, setAdminReply] = useState("");
   const [lastRefresh, setLastRefresh] = useState(null);
   const [newDoc, setNewDoc] = useState({
@@ -636,21 +637,31 @@ export default function UnifiedControlCenterV3() {
     }
   }, []);
 
-  // Load chat messages
+  // Load chat messages only when a chat is selected or the admin presses refresh.
+  const loadChatMessages = async (chat = selectedChat) => {
+    if (!chat) {
+      setChatMessages([]);
+      return;
+    }
+    setRefreshingChat(true);
+    try {
+      const messagesSnap = await getDocs(collection(db, "chats", chat.id, "messages"));
+      const msgs = messagesSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
+      setChatMessages(msgs);
+      requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+    } catch (err) {
+      console.error("Message load error:", err);
+      toast.error("Failed to refresh chat messages.");
+    } finally {
+      setRefreshingChat(false);
+    }
+  };
+
   useEffect(() => {
-    if (!selectedChat) return;
-    const loadMessages = async () => {
-      try {
-        const messagesSnap = await getDocs(collection(db, "chats", selectedChat.id, "messages"));
-        const msgs = messagesSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.timestamp - b.timestamp);
-        setChatMessages(msgs);
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      } catch (err) {
-        console.error("Message load error:", err);
-      }
-    };
-    loadMessages();
-  }, [selectedChat]);
+    loadChatMessages(selectedChat);
+  }, [selectedChat?.id]);
 
   // Handle file selection with resumable progress and a hard timeout
   const handleFileSelect = async (e) => {
@@ -1424,7 +1435,10 @@ export default function UnifiedControlCenterV3() {
                 <div className="uc-card">
                   {selectedChat ? (
                     <>
-                      <h3 className="uc-card-title">💬 Chat with {selectedChat.customerName || "Customer"}</h3>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                        <h3 className="uc-card-title">💬 Chat with {selectedChat.customerName || "Customer"}</h3>
+                        <button onClick={() => loadChatMessages(selectedChat)} disabled={refreshingChat} aria-label="Refresh selected chat" style={{ border: "1px solid rgba(74,222,128,0.45)", background: "rgba(22,163,74,0.15)", color: "#86efac", borderRadius: 8, padding: "7px 10px", cursor: refreshingChat ? "wait" : "pointer", fontWeight: 700 }}>{refreshingChat ? "…" : "↻ Refresh"}</button>
+                      </div>
                       <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 16, minHeight: 300, maxHeight: 400, overflowY: "auto", marginBottom: 16 }}>
                         {chatMessages.map(msg => (
                           <div

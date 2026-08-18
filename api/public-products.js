@@ -31,7 +31,7 @@ function normalize(record, id) {
     features: Array.isArray(record.features)
       ? record.features
       : String(record.features || "").split(",").map(value => value.trim()).filter(Boolean),
-    fileUrl: record.fileUrl || record.downloadURL || "",
+    fileUrl: record.fileUrl || record.downloadURL || record.downloadFile || record.documentUrl || record.url || "",
     fileName: record.fileName || "",
     slug: record.slug || id,
     createdAt: record.createdAt?.toDate?.()?.toISOString?.() || null,

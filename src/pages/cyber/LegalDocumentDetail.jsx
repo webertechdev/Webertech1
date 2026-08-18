@@ -27,9 +27,8 @@ const normalize = (record, id) => ({
 });
 
 async function findDocument(identifier) {
-  const seed = seedDocs.find(item => item.id === identifier || item.slug === identifier);
-  if (seed) return normalize(seed, seed.id);
-
+  // Always prefer a live admin-uploaded product. Seed records are only a
+  // fallback and must not hide a matching Firestore document with its real URL.
   try {
     const response = await fetch("/api/public-products");
     const payload = await response.json().catch(() => ({}));
@@ -38,7 +37,7 @@ async function findDocument(identifier) {
       if (match) return normalize(match, match.id);
     }
   } catch (error) {
-    console.warn("Published product API unavailable; trying legacy reads:", error);
+    console.warn("Published product API unavailable; trying direct reads:", error);
   }
 
   for (const source of ["products", "cyber_documents"]) {
@@ -56,7 +55,9 @@ async function findDocument(identifier) {
       console.warn(`Unable to read ${source}:`, error);
     }
   }
-  return null;
+
+  const seed = seedDocs.find(item => item.id === identifier || item.slug === identifier);
+  return seed ? normalize(seed, seed.id) : null;
 }
 
 export default function LegalDocumentDetail() {
@@ -124,7 +125,7 @@ export default function LegalDocumentDetail() {
     return <><Navbar /><div style={{ paddingTop: 120, textAlign: "center", minHeight: "60vh" }}><h2 style={{ fontWeight: 900 }}>Document Not Found</h2><p style={{ color: "#6b7280" }}>The document is unavailable or has not been published.</p><Link to="/cyber/legal-documents" style={{ color: "#16a34a", fontWeight: 700 }}>← Back to Hub</Link></div><Footer /></>;
   }
 
-  const fileUrl = product.fileUrl || product.downloadURL;
+  const fileUrl = product.fileUrl || product.downloadURL || product.downloadFile || product.documentUrl || product.url || "";
   const paid = paymentState.step === "paid";
   const busy = paymentState.step === "starting" || paymentState.step === "awaiting";
 
@@ -142,7 +143,7 @@ export default function LegalDocumentDetail() {
                 <h1 style={{ fontSize: 32, fontWeight: 900, color: "#111827", marginBottom: 16 }}>{product.title}</h1>
                 <p style={{ fontSize: 18, color: "#4b5563", lineHeight: 1.6, marginBottom: 32 }}>{product.description || "Ready-to-use WeberTech document."}</p>
                 {product.features.length > 0 && <><h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Features</h3><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 32 }}>{product.features.map((feature, index) => <div key={`${feature}-${index}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#4b5563" }}><span style={{ color: "#16a34a" }}>✓</span>{feature}</div>)}</div></>}
-                {fileUrl ? <div><h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Watermarked Preview</h3><DocumentPreview fileUrl={fileUrl} fileName={product.fileName || `${product.title}.pdf`} watermark /><p style={{ fontSize: 12, color: "#9ca3af", marginTop: 12, textAlign: "center" }}>Preview contains a <b>webertech.co.ke</b> watermark. The original file is available after payment.</p></div> : <div style={{ padding: 18, borderRadius: 12, background: "#fff7ed", color: "#9a3412", fontSize: 14 }}>The preview is being prepared. You can still contact WeberTech for this product.</div>}
+                <div><h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Watermarked Preview</h3><DocumentPreview fileUrl={fileUrl} fileName={product.fileName || `${product.title}.pdf`} title={product.title} description={product.description} features={product.features} watermark /><p style={{ fontSize: 12, color: "#9ca3af", marginTop: 12, textAlign: "center" }}>Preview contains a <b>webertech.co.ke</b> watermark. The original file is available after payment.</p></div>
               </div>
             </div>
             <div style={{ position: "sticky", top: 100 }}>

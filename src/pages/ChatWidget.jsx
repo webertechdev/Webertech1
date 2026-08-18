@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, serverTimestamp,
-  doc, setDoc, onSnapshot, query, orderBy, updateDoc
+  doc, setDoc, updateDoc
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -249,38 +249,6 @@ export default function ChatWidget() {
     const greeting = { role:"ai", text:GREETING[lang], time:tstamp(), id:"greeting" };
     setMsgs([greeting]);
   }, []);
-
-  // ── Listen to Firestore for admin takeover / agent replies ──
-  useEffect(() => {
-    if (!sessionId) return;
-    const q = query(
-      collection(db, "chats", sessionId, "messages"),
-      orderBy("createdAt", "asc")
-    );
-    const unsub = onSnapshot(q, snap => {
-      const firestoreMsgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Check if admin took over
-      const sessionMeta = snap.docs.find(d => d.data().type === "takeover");
-      if (sessionMeta) setTakenOver(true);
-
-      // Only sync agent messages to local state (avoid duplicating user/ai msgs)
-      const agentMsgs = firestoreMsgs.filter(m => m.role === "agent");
-      if (agentMsgs.length > 0) {
-        setMsgs(prev => {
-          const existingIds = new Set(prev.map(m => m.id));
-          const newAgent = agentMsgs.filter(m => !existingIds.has(m.id));
-          if (newAgent.length === 0) return prev;
-          return [...prev, ...newAgent.map(m => ({
-            role: "agent",
-            text: m.text,
-            time: tstamp(),
-            id:   m.id,
-          }))];
-        });
-      }
-    });
-    return () => unsub();
-  }, [sessionId]);
 
   // ── Scroll to bottom ──
   useEffect(() => {

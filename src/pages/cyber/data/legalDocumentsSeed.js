@@ -6,11 +6,10 @@
 // nothing for a given category — add real products in Firestore
 // (via Admin, once built) and they'll take over automatically.
 //
-// ⚠️ downloadFile is intentionally empty here — no actual document
-// files have been uploaded yet. Until a product has a real
-// downloadFile URL, completed orders are still recorded and payment
-// still works, but fulfillment is manual (WhatsApp the buyer) until
-// admin uploads the file to Firebase Storage and sets downloadFile.
+// Seed records may not have an original file URL yet. The customer detail
+// page still renders a branded, watermarked cover preview in that case.
+// Once an admin uploads a real file URL, the live Firestore product takes
+// precedence and its first page/image is rendered with the watermark.
 
 export const CATEGORIES = [
   { id: "vehicle", label: "Vehicle Documents", emoji: "🚗" },

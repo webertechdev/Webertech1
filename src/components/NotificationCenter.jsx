@@ -23,12 +23,13 @@ export default function NotificationCenter({ userId, isOpen, onClose }) {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setLoading(false);
+      return;
+    }
     loadNotifications();
-    
-    // Refresh every 10 seconds for real-time feel
-    const interval = setInterval(loadNotifications, 10000);
-    return () => clearInterval(interval);
   }, [userId]);
 
   const loadNotifications = async () => {
@@ -114,13 +115,16 @@ export default function NotificationCenter({ userId, isOpen, onClose }) {
           <button className="nc-close" onClick={onClose}>✕</button>
         </div>
 
-        {unreadCount > 0 && (
-          <div className="nc-actions">
+        <div className="nc-actions">
+          <button className="nc-action-btn" onClick={loadNotifications} disabled={loading}>
+            {loading ? "Refreshing…" : "↻ Refresh"}
+          </button>
+          {unreadCount > 0 && (
             <button className="nc-action-btn" onClick={markAllAsRead}>
               Mark all as read
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="nc-list">
           {loading ? (

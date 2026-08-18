@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, serverTimestamp,
-  doc, setDoc, getDoc, onSnapshot, query, orderBy
+  doc, setDoc, getDoc, getDocs, query, orderBy
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
@@ -36,11 +36,12 @@ const GREETING = {
   sw: "👋 Jambo! Mimi ni WeberAI, msaidizi wako wa WeberTech.\nNaweza kukusaidia kupata huduma sahihi, kufungua ukurasa unaofaa, na kufuata hatua zinazofuata. Nikusaidie nini leo?",
 };
 
-function getSessionId() {
-  let id = sessionStorage.getItem("wt_chat_session");
+function getSessionId(userId) {
+  const key = `wt_chat_session_${userId}`;
+  let id = sessionStorage.getItem(key);
   if (!id) {
-    id = "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-    sessionStorage.setItem("wt_chat_session", id);
+    id = "sess_" + userId + "_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    sessionStorage.setItem(key, id);
   }
   return id;
 }
@@ -134,6 +135,7 @@ export default function ChatWidgetEnhanced() {
   const [authEmail,   setAuthEmail]   = useState("");
   const [authPass,    setAuthPass]    = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [refreshing,  setRefreshing]  = useState(false);
   const bottomRef   = useRef(null);
   const inputRef    = useRef(null);
   const cssInjected = useRef(false);
@@ -151,27 +153,38 @@ export default function ChatWidgetEnhanced() {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    const sid = getSessionId();
-    setSessionId(sid);
-    const greeting = { role:"ai", text:GREETING[lang], time:tstamp(), id:"greeting" };
-    setMsgs([greeting]);
-
-    // Listen for real-time messages (including Admin replies)
-    const q = query(collection(db, "chats", sid, "messages"), orderBy("timestamp", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      if (snap.empty) return;
+  const loadMessages = async (sid, language = lang) => {
+    if (!sid || !currentUser) return;
+    setRefreshing(true);
+    const greeting = { role:"ai", text:GREETING[language], time:tstamp(), id:"greeting" };
+    try {
+      const snap = await getDocs(query(collection(db, "chats", sid, "messages"), orderBy("timestamp", "asc")));
       const newMsgs = snap.docs.map(d => ({
         role: d.data().sender === "user" ? "user" : "ai",
-        text: d.data().text,
-        time: d.data().timestamp?.toDate().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || tstamp(),
+        text: typeof d.data().text === "string" ? d.data().text : "",
+        time: d.data().timestamp?.toDate?.().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || tstamp(),
         id: d.id,
         pdfData: d.data().metadata?.pdfData
       }));
       setMsgs([greeting, ...newMsgs]);
-    });
-    return () => unsub();
-  }, [lang]);
+    } catch (err) {
+      console.error("Chat refresh failed:", err);
+      setMsgs([greeting]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!currentUser) {
+      setSessionId(null);
+      setMsgs([]);
+      return;
+    }
+    const sid = getSessionId(currentUser.uid);
+    setSessionId(sid);
+    loadMessages(sid, lang);
+  }, [lang, currentUser?.uid]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior:"smooth" });
@@ -368,6 +381,7 @@ export default function ChatWidgetEnhanced() {
                 <option value="en" style={{ color: "#000" }}>EN</option>
                 <option value="sw" style={{ color: "#000" }}>SW</option>
               </select>
+              {currentUser && <button onClick={() => loadMessages(sessionId, lang)} disabled={refreshing} aria-label="Refresh chat" style={{ background:"rgba(255,255,255,0.18)", border:"none", borderRadius:7, width:28, height:28, cursor:refreshing ? "wait" : "pointer", color:"#fff" }}>{refreshing ? "…" : "↻"}</button>}
               <button onClick={closeChat} style={{ background:"rgba(255,255,255,0.18)", border:"none", borderRadius:7, width:28, height:28, cursor:"pointer", color:"#fff" }}>✕</button>
             </div>
           </div>
