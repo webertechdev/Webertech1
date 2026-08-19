@@ -1,13 +1,11 @@
 // src/payments/services/intasend.js
-// Talks only to our own /api/payments/* endpoints — the IntaSend
-// secret key never reaches the browser. Only the publishable key
-// concept applies, and even that is used server-side here for
-// simplicity/consistency with the NestLink flow.
+// Talks only to our own /api/payments/* endpoints — provider secrets
+// never reach the browser.
 
 export async function startIntaSendPayment({ amount, email, phone, firstName, lastName, product, customer }) {
   const res = await fetch("/api/payments/intasend-checkout", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
       amount,
       email,
@@ -22,7 +20,15 @@ export async function startIntaSendPayment({ amount, email, phone, firstName, la
       customerName: customer?.name || "",
     }),
   });
-  const data = await res.json();
+
+  const text = await res.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("The IntaSend server returned an invalid response. Please try again.");
+  }
+
   if (!res.ok) throw new Error(data.error || "IntaSend checkout failed to start");
-  return data; // { success, orderId, checkoutUrl }
+  return data;
 }

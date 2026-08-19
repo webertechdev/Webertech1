@@ -16,7 +16,7 @@ import PaymentStatus from "./PaymentStatus";
 import { usePayment } from "./hooks/usePayment";
 
 export default function PaymentModal({ open, onClose, product, customer }) {
-  const { state, pay, reset } = usePayment();
+  const { state, pay, reset, refreshStatus } = usePayment();
 
   useEffect(() => {
     if (!open) reset();
@@ -73,6 +73,10 @@ export default function PaymentModal({ open, onClose, product, customer }) {
             message={state.message}
             checkoutUrl={state.checkoutUrl}
             product={product}
+            orderId={state.orderId}
+            checking={state.checking}
+            timedOut={state.timedOut}
+            onRefresh={refreshStatus}
             onRetry={reset}
             onClose={onClose}
           />

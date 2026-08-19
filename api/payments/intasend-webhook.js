@@ -10,12 +10,12 @@
 //  plus a "challenge" string you configure in the dashboard to
 //  verify the request is genuinely from IntaSend.
 // ─────────────────────────────────────────────────────────────────
-const { markOrderPaid, markOrderFailed } = require("../_lib/orders");
+import { markOrderPaid, markOrderFailed } from "../_lib/orders.js";
 
 const PAID_STATES = ["COMPLETE", "COMPLETED", "PAID"];
 const FAILED_STATES = ["FAILED", "CANCELLED", "CANCELED"];
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {

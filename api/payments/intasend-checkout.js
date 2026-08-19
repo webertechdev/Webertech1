@@ -12,7 +12,7 @@
 //    INTASEND_LIVE              ← "true" for production, unset/"false" for sandbox
 //    APP_BASE_URL                ← e.g. https://webertech.co.ke (for redirect_url)
 // ─────────────────────────────────────────────────────────────────
-const { generateOrderId, createPendingOrder, attachProviderRef, markOrderFailed } = require("../_lib/orders");
+import { generateOrderId, createPendingOrder, attachProviderRef, markOrderFailed } from "../_lib/orders.js";
 
 function baseUrl() {
   return process.env.INTASEND_LIVE === "true"
@@ -20,7 +20,7 @@ function baseUrl() {
     : "https://sandbox.intasend.com";
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");

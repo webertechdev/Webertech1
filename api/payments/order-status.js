@@ -3,19 +3,21 @@
 //  GET /api/payments/order-status?orderId=WT-...
 // ─────────────────────────────────────────────────────────────────
 
+import { getDb } from "../_lib/firebaseAdmin.js";
+
 const sendJson = (res, status, data) => {
   res.setHeader("Content-Type", "application/json");
   res.status(status).json(data);
 };
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const { db } = require("../_lib/firebaseAdmin");
+    const db = getDb();
 
     if (req.method !== "GET") {
       return sendJson(res, 405, { error: "Method not allowed" });

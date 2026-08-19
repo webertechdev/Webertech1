@@ -5,17 +5,22 @@
 //  creates/updates orders through these same functions so the shape
 //  in Firestore never diverges between providers.
 // ─────────────────────────────────────────────────────────────────
-const { admin, db } = require("./firebaseAdmin");
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { getDb } from "./firebaseAdmin.js";
 
 // WT-<epoch>-<6 random alnum> — used as BOTH the Firestore doc id
 // and the provider's local_id / api_ref, so a webhook can look the
 // order up directly with zero extra query.
-function generateOrderId() {
+export function generateOrderId() {
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `WT-${Date.now()}-${rand}`;
 }
 
-async function createPendingOrder({
+function serverTimestamp() {
+  return FieldValue.serverTimestamp();
+}
+
+export async function createPendingOrder({
   orderId,
   customerId = null,
   customerName = "",
@@ -29,6 +34,7 @@ async function createPendingOrder({
   currency = "KES",
   paymentMethod, // "nestlink" | "intasend" | "safaricom"
 }) {
+  const db = getDb();
   const orderRef = db.collection("orders").doc(orderId);
   await orderRef.set({
     orderId,
@@ -45,31 +51,34 @@ async function createPendingOrder({
     paymentMethod,
     status: "pending", // pending | paid | failed | cancelled
     providerRef: {},
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
   return orderRef;
 }
 
-async function attachProviderRef(orderId, providerRef) {
+export async function attachProviderRef(orderId, providerRef) {
+  const db = getDb();
   await db.collection("orders").doc(orderId).update({
     providerRef,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 }
 
-async function markOrderFailed(orderId, reason = "") {
+export async function markOrderFailed(orderId, reason = "") {
+  const db = getDb();
   await db.collection("orders").doc(orderId).update({
     status: "failed",
     failReason: reason,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 }
 
 // Called only from webhooks (provider-confirmed payment). Idempotent —
 // safe to call more than once for the same orderId (e.g. manual
 // "triggerWebhook" resend from NestLink).
-async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, method } = {}) {
+export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, method } = {}) {
+  const db = getDb();
   const orderRef = db.collection("orders").doc(orderId);
   const snap = await orderRef.get();
   if (!snap.exists) return null;
@@ -80,7 +89,7 @@ async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, method }
   await orderRef.update({
     status: "paid",
     mpesaRef,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 
   await db.collection("payments").add({
@@ -92,7 +101,7 @@ async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, method }
     phone: order.customerPhone,
     mpesaRef,
     rawPayload,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: serverTimestamp(),
   });
 
   // Product delivery / fulfillment branch
@@ -103,10 +112,10 @@ async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, method }
       productId: order.productId,
       productSlug: order.productSlug,
       downloadCount: 0,
-      expiresAt: admin.firestore.Timestamp.fromDate(
+      expiresAt: Timestamp.fromDate(
         new Date(Date.now() + 1000 * 60 * 60 * 24 * 30) // 30-day link validity
       ),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   } else if (order.type === "service") {
     await db.collection("services").add({
@@ -117,17 +126,9 @@ async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, method }
       status: "new", // new -> assigned -> in_progress -> completed
       assignedStaff: null,
       notes: "",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
     });
   }
 
   return { ...order, status: "paid" };
 }
-
-module.exports = {
-  generateOrderId,
-  createPendingOrder,
-  attachProviderRef,
-  markOrderFailed,
-  markOrderPaid,
-};

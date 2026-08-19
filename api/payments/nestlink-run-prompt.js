@@ -3,13 +3,15 @@
 //  POST /api/payments/nestlink-run-prompt
 // ─────────────────────────────────────────────────────────────────
 
+import { generateOrderId, createPendingOrder, attachProviderRef, markOrderFailed } from "../_lib/orders.js";
+
 // 1. Helper to guarantee JSON response even on crash
 const sendJson = (res, status, data) => {
   res.setHeader("Content-Type", "application/json");
   res.status(status).json(data);
 };
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   // 2. Set CORS headers immediately
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -17,10 +19,6 @@ module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    // 3. Import dependencies inside handler to catch init errors
-    const { db } = require("../_lib/firebaseAdmin");
-    const { generateOrderId, createPendingOrder, attachProviderRef, markOrderFailed } = require("../_lib/orders");
-
     if (req.method !== "POST") {
       return sendJson(res, 405, { error: "Method not allowed" });
     }

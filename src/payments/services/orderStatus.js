@@ -1,51 +1,81 @@
 // src/payments/services/orderStatus.js
-// Realtime status via Firestore onSnapshot (instant, webhook-driven).
-// Falls back to polling our own /api/payments/order-status endpoint
-// if the realtime listener errors out (e.g. rules/network issue).
-
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from "../../config/firebase";
-
-export function listenToOrder(orderId, onUpdate, onError) {
-  const ref = doc(db, "orders", orderId);
-  return onSnapshot(
-    ref,
-    (snap) => {
-      if (!snap.exists()) return;
-      const d = snap.data();
-      onUpdate({
-        status: d.status,
-        paymentMethod: d.paymentMethod,
-        amount: d.amount,
-        productTitle: d.productTitle,
-        failReason: d.failReason || null,
-      });
-    },
-    (err) => {
-      console.warn("orders onSnapshot failed, falling back to polling:", err);
-      onError?.(err);
-    }
-  );
-}
+// Payment-specific status checks for WeberPay.
+// The rest of the platform uses manual refreshes; payment status is the
+// one intentional bounded retry loop because NestLink confirms payment
+// asynchronously through its webhook.
 
 export async function fetchOrderStatusOnce(orderId) {
-  const res = await fetch(`/api/payments/order-status?orderId=${encodeURIComponent(orderId)}`);
-  if (!res.ok) throw new Error("Could not fetch order status");
-  return res.json();
+  if (!orderId) throw new Error("Payment order is missing");
+
+  const res = await fetch(`/api/payments/order-status?orderId=${encodeURIComponent(orderId)}`, {
+    headers: { Accept: "application/json" },
+  });
+  const text = await res.text();
+
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("The payment server returned an invalid response. Please try again.");
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || "Could not fetch payment status");
+  }
+
+  return data;
 }
 
-export function pollOrderStatus(orderId, onUpdate, intervalMs = 3000) {
+/**
+ * Poll only the current payment order, with a hard stop after five minutes.
+ * Returns a cleanup function. The UI also exposes fetchOrderStatusOnce as a
+ * manual "Check payment status" action.
+ */
+export function pollOrderStatus(orderId, onUpdate, intervalMs = 4000) {
   let stopped = false;
+  let timer = null;
+  let attempts = 0;
+  const maxAttempts = 75;
+
+  const schedule = () => {
+    if (!stopped) timer = window.setTimeout(tick, intervalMs);
+  };
+
   const tick = async () => {
     if (stopped) return;
+    attempts += 1;
+
     try {
       const data = await fetchOrderStatusOnce(orderId);
+      if (stopped) return;
       onUpdate(data);
-      if (data.status === "pending") setTimeout(tick, intervalMs);
-    } catch {
-      setTimeout(tick, intervalMs);
+
+      if (data.status === "pending" && attempts < maxAttempts) {
+        schedule();
+      } else if (data.status === "pending" && attempts >= maxAttempts) {
+        onUpdate({
+          ...data,
+          timedOut: true,
+          message: "Payment is still pending. Tap Check payment status after completing the M-PESA prompt.",
+        });
+      }
+    } catch (error) {
+      if (stopped) return;
+      if (attempts < maxAttempts) {
+        schedule();
+      } else {
+        onUpdate({
+          status: "unknown",
+          error: error.message || "Unable to check payment status",
+          timedOut: true,
+        });
+      }
     }
   };
+
   tick();
-  return () => { stopped = true; };
+  return () => {
+    stopped = true;
+    if (timer) window.clearTimeout(timer);
+  };
 }

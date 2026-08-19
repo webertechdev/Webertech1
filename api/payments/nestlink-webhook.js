@@ -3,20 +3,20 @@
 //  POST /api/payments/nestlink-webhook
 // ─────────────────────────────────────────────────────────────────
 
+import { markOrderPaid, markOrderFailed } from "../_lib/orders.js";
+
 const sendJson = (res, status, data) => {
   res.setHeader("Content-Type", "application/json");
   res.status(status).json(data);
 };
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const { markOrderPaid, markOrderFailed } = require("../_lib/orders");
-
     if (req.method !== "POST") {
       return sendJson(res, 405, { error: "Method not allowed" });
     }
