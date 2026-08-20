@@ -3,8 +3,6 @@
 // Documents, Services, Courses, Electronics, Bundles, Dev
 
 import { useState, useEffect } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "../config/firebase";
 import { Link } from "react-router-dom";
 
 export default function UniversalSearch({ isOpen, onClose }) {
@@ -23,18 +21,22 @@ export default function UniversalSearch({ isOpen, onClose }) {
       try {
         const searchLower = searchTerm.toLowerCase();
 
-        // Search products (documents, services, etc.)
-        const productsSnap = await getDocs(collection(db, "products"));
-        const allProducts = productsSnap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(p => p.title?.toLowerCase().includes(searchLower) || p.description?.toLowerCase().includes(searchLower));
+        const response = await fetch("/api/public-products");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Live catalog unavailable");
+        const allProducts = (payload.products || []).filter(product => {
+          const haystack = [product.title, product.description, product.category, product.division, product.type, ...(product.features || [])]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return product.published !== false && haystack.includes(searchLower);
+        });
 
-        // Categorize results
         const categorized = {
-          documents: allProducts.filter(p => p.category === "legal-document"),
-          services: allProducts.filter(p => p.type === "service"),
-          courses: allProducts.filter(p => p.type === "course"),
-          electronics: allProducts.filter(p => p.type === "electronics"),
+          documents: allProducts.filter(p => p.type === "legal-document" || p.category === "cyber" || p.category === "legal-document"),
+          services: allProducts.filter(p => p.type === "service" || p.type === "service-document"),
+          courses: allProducts.filter(p => p.type === "course" || p.category === "academy"),
+          electronics: allProducts.filter(p => p.type === "electronics" || p.category === "electronics"),
         };
 
         setResults(categorized);

@@ -17,6 +17,7 @@ export default function DashboardOverviewV2({ user }) {
     availableCoupons: 0,
   });
   const [recentActivity, setRecentActivity] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,6 +56,17 @@ export default function DashboardOverviewV2({ user }) {
             timestamp: doc.data().timestamp?.toDate?.() || new Date(),
           }))
         );
+
+        try {
+          const catalogResponse = await fetch("/api/public-products");
+          const catalogPayload = await catalogResponse.json().catch(() => ({}));
+          if (catalogResponse.ok) {
+            setRecommendations((catalogPayload.products || []).slice(0, 3));
+          }
+        } catch (catalogError) {
+          console.warn("Live recommendations unavailable:", catalogError);
+          setRecommendations([]);
+        }
       } catch (err) {
         console.error("Failed to load dashboard data:", err);
       }
@@ -71,12 +83,6 @@ export default function DashboardOverviewV2({ user }) {
     { icon: "🛒", label: "Electronics", href: "/electronics", external: false },
     { icon: "🎓", label: "Academy", href: "/academy", external: false },
     { icon: "💻", label: "Dev Services", href: "/dev", external: false },
-  ];
-
-  const RECOMMENDATIONS = [
-    { id: 1, title: "Car Sale Agreement", category: "Document", price: "KES 199" },
-    { id: 2, title: "NTSA Transfer", category: "Service", price: "From KES 500" },
-    { id: 3, title: "Business Registration", category: "Service", price: "From KES 1000" },
   ];
 
   return (
@@ -207,12 +213,14 @@ export default function DashboardOverviewV2({ user }) {
           <div className="dov2-card">
             <div className="dov2-card-title">Recommended For You</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {RECOMMENDATIONS.map(rec => (
-                <div key={rec.id} className="dov2-rec-item">
+              {recommendations.length === 0 ? (
+                <p style={{ color: "#9ca3af", fontSize: 13 }}>No published products available yet.</p>
+              ) : recommendations.map(rec => (
+                <Link key={rec.id} to={`/cyber/legal-documents/${rec.slug || rec.id}`} className="dov2-rec-item" style={{ textDecoration: "none" }}>
                   <div className="dov2-rec-title">{rec.title}</div>
-                  <div className="dov2-rec-cat">{rec.category}</div>
-                  <div className="dov2-rec-price">{rec.price}</div>
-                </div>
+                  <div className="dov2-rec-cat">{rec.category || rec.division || "Product"}</div>
+                  <div className="dov2-rec-price">KES {Number(rec.price || 0).toLocaleString()}</div>
+                </Link>
               ))}
             </div>
           </div>

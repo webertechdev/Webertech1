@@ -326,6 +326,8 @@ export default function UnifiedControlCenterV3() {
     fileUrl: "",
     fileName: "",
   });
+  const [editingDoc, setEditingDoc] = useState(null);
+  const [editDocForm, setEditDocForm] = useState({});
   const [aiTraining, setAiTraining] = useState({
     personality: "Professional and helpful",
     language: "English & Swahili",
@@ -823,12 +825,16 @@ export default function UnifiedControlCenterV3() {
         title: newDoc.title,
         description: newDoc.description,
         price: parseFloat(newDoc.price) || 0,
-        category: newDoc.category,
+        category: String(newDoc.category || "cyber").toLowerCase(),
+        division: String(newDoc.category || "cyber").toLowerCase(),
+        type: String(newDoc.category || "cyber").toLowerCase() === "cyber" ? "legal-document" : "service-document",
         icon: newDoc.icon,
         features: newDoc.features,
         fileUrl,
         fileName,
         slug,
+        published: true,
+        status: "active",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -865,6 +871,60 @@ export default function UnifiedControlCenterV3() {
       console.error("Add doc error:", err);
       toast.dismiss();
       toast.error("Failed to add: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEditDocument = (documentRecord) => {
+    setEditingDoc(documentRecord);
+    setEditDocForm({
+      title: documentRecord.title || "",
+      description: documentRecord.description || "",
+      price: documentRecord.price ?? 0,
+      category: documentRecord.category || documentRecord.division || "cyber",
+      icon: documentRecord.icon || "📄",
+      features: Array.isArray(documentRecord.features) ? documentRecord.features.join(", ") : (documentRecord.features || ""),
+      published: documentRecord.published !== false,
+    });
+  };
+
+  const handleUpdateDocument = async () => {
+    if (!editingDoc?.id) return;
+    const title = String(editDocForm.title || "").trim();
+    const price = Number(editDocForm.price);
+    if (!title) {
+      toast.error("A document title is required.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0 || price > 1000000) {
+      toast.error("Enter a valid price between KES 0 and KES 1,000,000.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const updates = {
+        title,
+        description: String(editDocForm.description || "").trim(),
+        price,
+        category: String(editDocForm.category || "cyber").toLowerCase(),
+        division: String(editDocForm.category || "cyber").toLowerCase(),
+        icon: editDocForm.icon || "📄",
+        features: String(editDocForm.features || "").trim(),
+        published: editDocForm.published !== false,
+        status: editDocForm.published !== false ? "active" : "draft",
+        updatedAt: serverTimestamp(),
+      };
+      await withTimeout(setDoc(doc(db, "products", editingDoc.id), updates, { merge: true }), 15000, "Saving product updates timed out.");
+      setDocuments(prev => prev.map(item => item.id === editingDoc.id ? { ...item, ...updates, updatedAt: new Date() } : item));
+      setEditingDoc(null);
+      setEditDocForm({});
+      setLastRefresh(new Date().toLocaleTimeString());
+      toast.success("✅ Product details and price updated live.");
+    } catch (error) {
+      console.error("Document update error:", error);
+      toast.error(`Could not update document: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -1283,6 +1343,54 @@ export default function UnifiedControlCenterV3() {
                   </button>
                 </div>
 
+                {editingDoc && (
+                  <div className="uc-card" style={{ border: "1px solid rgba(74,222,128,0.55)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                      <h3 className="uc-card-title">✏️ Edit Product & Price</h3>
+                      <button className="uc-btn" onClick={() => { setEditingDoc(null); setEditDocForm({}); }} style={{ padding: "6px 12px", fontSize: 12 }}>Cancel</button>
+                    </div>
+                    <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, marginTop: 0 }}>Changes save directly to the live catalog and appear to customers after their next refresh.</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div>
+                        <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Title *</label>
+                        <input className="uc-input" value={editDocForm.title || ""} onChange={e => setEditDocForm(prev => ({ ...prev, title: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Price (KES) *</label>
+                        <input className="uc-input" type="number" min="0" max="1000000" step="1" value={editDocForm.price ?? 0} onChange={e => setEditDocForm(prev => ({ ...prev, price: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div>
+                        <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Category</label>
+                        <select className="uc-input" value={editDocForm.category || "cyber"} onChange={e => setEditDocForm(prev => ({ ...prev, category: e.target.value }))}>
+                          <option value="cyber">Cyber Division</option>
+                          <option value="academy">Academy</option>
+                          <option value="electronics">Electronics</option>
+                          <option value="bundles">Bundles</option>
+                          <option value="dev">Dev Services</option>
+                          <option value="hustle">Hustle KE</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Icon</label>
+                        <input className="uc-input" maxLength="2" value={editDocForm.icon || "📄"} onChange={e => setEditDocForm(prev => ({ ...prev, icon: e.target.value }))} />
+                      </div>
+                    </div>
+                    <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Description</label>
+                    <textarea className="uc-textarea" value={editDocForm.description || ""} onChange={e => setEditDocForm(prev => ({ ...prev, description: e.target.value }))} />
+                    <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Features (comma-separated)</label>
+                    <input className="uc-input" value={editDocForm.features || ""} onChange={e => setEditDocForm(prev => ({ ...prev, features: e.target.value }))} />
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.8)", fontSize: 13, marginTop: 14 }}>
+                      <input type="checkbox" checked={editDocForm.published !== false} onChange={e => setEditDocForm(prev => ({ ...prev, published: e.target.checked }))} />
+                      Published in the customer catalog
+                    </label>
+                    <button className="uc-btn" onClick={handleUpdateDocument} disabled={loading} style={{ width: "100%", marginTop: 16 }}>
+                      {loading ? "⟳ Saving..." : "💾 Save live changes"}
+                    </button>
+                  </div>
+                )}
+
                 <div className="uc-card">
                   <h3 className="uc-card-title">📋 All Documents ({documents.length})</h3>
                   {documents.length === 0 ? (
@@ -1295,6 +1403,14 @@ export default function UnifiedControlCenterV3() {
                         <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, marginBottom: 8 }}>{doc.description}</div>
                         {doc.fileName && <div style={{ color: "#4ade80", fontSize: 12, marginBottom: 8 }}>📎 {doc.fileName}</div>}
                         <div className="uc-doc-actions">
+                          <button
+                            className="uc-btn"
+                            style={{ fontSize: 12, padding: "6px 12px" }}
+                            onClick={() => startEditDocument(doc)}
+                            disabled={loading}
+                          >
+                            ✏️ Edit & Price
+                          </button>
                           {doc.fileUrl && (
                             <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="uc-btn" style={{ fontSize: 12, padding: "6px 12px", textDecoration: "none" }}>
                               📥 Download

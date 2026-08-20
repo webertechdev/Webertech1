@@ -10,7 +10,6 @@ import DocumentPreview from "../../components/DocumentPreview";
 import Checkout from "../../payments/Checkout";
 import PaymentStatus from "../../payments/PaymentStatus";
 import { usePayment } from "../../payments/hooks/usePayment";
-import { LEGAL_DOCUMENTS_SEED as seedDocs } from "./data/legalDocumentsSeed";
 import { toast, Toaster } from "react-hot-toast";
 
 const toFeatures = (value) => {
@@ -56,8 +55,7 @@ async function findDocument(identifier) {
     }
   }
 
-  const seed = seedDocs.find(item => item.id === identifier || item.slug === identifier);
-  return seed ? normalize(seed, seed.id) : null;
+  return null;
 }
 
 export default function LegalDocumentDetail() {

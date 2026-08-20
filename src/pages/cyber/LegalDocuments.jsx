@@ -5,7 +5,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
-import { CATEGORIES, LEGAL_DOCUMENTS_SEED as seedDocs } from "./data/legalDocumentsSeed";
+import { CATEGORIES } from "./data/legalDocumentsSeed";
 
 const slugify = (value = "") => String(value)
   .toLowerCase()
@@ -42,36 +42,33 @@ function belongsToCategory(document, categoryFilter) {
 }
 
 async function loadCatalog() {
-  const byId = new Map(seedDocs.map(item => [item.id, normalizeDocument(item, item.id)]));
+  const liveProducts = [];
 
-  // Customer pages use the server-side catalog so Firestore rules can keep
-  // products protected while published products remain publicly discoverable.
+  // Firestore products are the single source of truth. The public API is
+  // preferred so published products remain discoverable without exposing
+  // private admin collections to customers.
   try {
     const response = await fetch("/api/public-products");
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Published catalog unavailable");
-    (payload.products || []).forEach(item => {
-      const normalized = normalizeDocument(item, item.id);
-      if (normalized.published !== false) byId.set(normalized.id, normalized);
-    });
+    return (payload.products || [])
+      .map(item => normalizeDocument(item, item.id))
+      .filter(document => document.published);
   } catch (error) {
-    console.warn("Published product API unavailable; trying legacy Firestore reads", error);
-
-    // Compatibility fallback for local development and older deployments.
-    for (const source of ["products", "cyber_documents"]) {
-      try {
-        const snapshot = await getDocs(collection(db, source));
-        snapshot.docs.forEach(item => {
-          const normalized = normalizeDocument(item.data(), item.id);
-          if (normalized.published !== false) byId.set(normalized.id, normalized);
-        });
-      } catch (legacyError) {
-        console.warn(`Unable to read ${source}; continuing with available catalog`, legacyError);
-      }
-    }
+    console.warn("Published product API unavailable; trying live Firestore reads", error);
   }
 
-  return Array.from(byId.values()).filter(document => document.published);
+  try {
+    const snapshot = await getDocs(collection(db, "products"));
+    snapshot.docs.forEach(item => {
+      const normalized = normalizeDocument(item.data(), item.id);
+      if (normalized.published) liveProducts.push(normalized);
+    });
+  } catch (error) {
+    console.warn("Live product catalog unavailable", error);
+  }
+
+  return liveProducts;
 }
 
 export default function LegalDocuments() {
@@ -92,8 +89,8 @@ export default function LegalDocuments() {
       } catch (loadError) {
         console.error("Failed to fetch documents:", loadError);
         if (active) {
-          setDocuments(seedDocs.map(item => normalizeDocument(item, item.id)).filter(document => belongsToCategory(document, categoryFilter)));
-          setError("Showing the starter catalog while the live catalog reconnects.");
+          setDocuments([]);
+          setError("The live catalog is temporarily unavailable. Click Refresh or try again shortly.");
         }
       } finally {
         if (active) setLoading(false);
