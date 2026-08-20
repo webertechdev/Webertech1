@@ -328,6 +328,9 @@ export default function UnifiedControlCenterV3() {
   });
   const [editingDoc, setEditingDoc] = useState(null);
   const [editDocForm, setEditDocForm] = useState({});
+  const [documentSearch, setDocumentSearch] = useState("");
+  const [documentSearchMessage, setDocumentSearchMessage] = useState("");
+  const editDocRef = useRef(null);
   const [aiTraining, setAiTraining] = useState({
     personality: "Professional and helpful",
     language: "English & Swahili",
@@ -344,6 +347,14 @@ export default function UnifiedControlCenterV3() {
   });
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!editingDoc) return;
+    const timer = setTimeout(() => {
+      editDocRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [editingDoc]);
 
   // Refresh the admin inbox collections without realtime listeners.
   const refreshInboxData = async ({ silent = false } = {}) => {
@@ -889,6 +900,36 @@ export default function UnifiedControlCenterV3() {
     });
   };
 
+  const findDocumentToEdit = () => {
+    const query = documentSearch.trim().toLowerCase();
+    if (!query) {
+      setDocumentSearchMessage("Type a title, slug, category, document ID, or filename first.");
+      return;
+    }
+
+    const matches = documents.filter(documentRecord => [
+      documentRecord.title,
+      documentRecord.slug,
+      documentRecord.id,
+      documentRecord.category,
+      documentRecord.division,
+      documentRecord.description,
+      documentRecord.fileName,
+    ].some(value => String(value || "").toLowerCase().includes(query)));
+
+    if (matches.length === 0) {
+      setDocumentSearchMessage(`No document matched “${documentSearch.trim()}”. Click Refresh and try again.`);
+      setEditingDoc(null);
+      setEditDocForm({});
+      return;
+    }
+
+    startEditDocument(matches[0]);
+    setDocumentSearchMessage(matches.length === 1
+      ? `Editing ${matches[0].title || "the selected document"}.`
+      : `${matches.length} matches found. Editing the first match; choose another result below if needed.`);
+  };
+
   const handleUpdateDocument = async () => {
     if (!editingDoc?.id) return;
     const title = String(editDocForm.title || "").trim();
@@ -1020,6 +1061,19 @@ export default function UnifiedControlCenterV3() {
       setLoading(false);
     }
   };
+
+  const normalizedDocumentSearch = documentSearch.trim().toLowerCase();
+  const filteredDocuments = normalizedDocumentSearch
+    ? documents.filter(documentRecord => [
+        documentRecord.title,
+        documentRecord.slug,
+        documentRecord.id,
+        documentRecord.category,
+        documentRecord.division,
+        documentRecord.description,
+        documentRecord.fileName,
+      ].some(value => String(value || "").toLowerCase().includes(normalizedDocumentSearch)))
+    : documents;
 
   return (
     <>
@@ -1343,8 +1397,73 @@ export default function UnifiedControlCenterV3() {
                   </button>
                 </div>
 
+                <div className="uc-card" style={{ border: "1px solid rgba(59,130,246,0.45)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <h3 className="uc-card-title" style={{ marginBottom: 6 }}>🔎 Find & Edit a Document</h3>
+                      <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, margin: 0 }}>Search the loaded live catalog by title, slug, category, ID, description, or filename. The first match will populate the editor.</p>
+                    </div>
+                    <span style={{ color: "#93c5fd", fontSize: 12, fontWeight: 700 }}>{documents.length} loaded</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "stretch", flexWrap: "wrap", marginTop: 16 }}>
+                    <input
+                      className="uc-input"
+                      style={{ flex: "1 1 280px", marginBottom: 0 }}
+                      type="search"
+                      value={documentSearch}
+                      placeholder="Search e.g. NDA, car sale, cyber, or document ID"
+                      onChange={e => {
+                        setDocumentSearch(e.target.value);
+                        setDocumentSearchMessage("");
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") findDocumentToEdit();
+                      }}
+                      aria-label="Search documents to edit"
+                    />
+                    <button className="uc-btn" onClick={findDocumentToEdit} disabled={loading || documents.length === 0} style={{ whiteSpace: "nowrap" }}>
+                      {loading ? "⟳ Working..." : "✏️ Find & Populate"}
+                    </button>
+                    {documentSearch && (
+                      <button
+                        className="uc-btn"
+                        onClick={() => { setDocumentSearch(""); setDocumentSearchMessage(""); }}
+                        disabled={loading}
+                        style={{ background: "#475569", whiteSpace: "nowrap" }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {documentSearchMessage && (
+                    <div style={{ marginTop: 10, color: filteredDocuments.length ? "#86efac" : "#fca5a5", fontSize: 12 }}>
+                      {filteredDocuments.length ? "✅ " : "⚠️ "}{documentSearchMessage}
+                    </div>
+                  )}
+                  {normalizedDocumentSearch && filteredDocuments.length > 0 && (
+                    <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                      {filteredDocuments.slice(0, 6).map(documentRecord => (
+                        <button
+                          key={documentRecord.id}
+                          type="button"
+                          onClick={() => {
+                            startEditDocument(documentRecord);
+                            setDocumentSearchMessage(`Editing ${documentRecord.title || "the selected document"}.`);
+                          }}
+                          style={{ textAlign: "left", border: "1px solid rgba(147,197,253,0.3)", background: "rgba(59,130,246,0.1)", color: "#fff", borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}
+                        >
+                          <strong>{documentRecord.icon || "📄"} {documentRecord.title || "Untitled document"}</strong>
+                          <span style={{ display: "block", color: "rgba(255,255,255,0.6)", fontSize: 11, marginTop: 3 }}>
+                            KES {Number(documentRecord.price || 0).toLocaleString()} · {documentRecord.category || documentRecord.division || "uncategorized"} · {documentRecord.published === false ? "Draft" : "Published"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {editingDoc && (
-                  <div className="uc-card" style={{ border: "1px solid rgba(74,222,128,0.55)" }}>
+                  <div ref={editDocRef} id="uc-document-editor" className="uc-card" style={{ border: "1px solid rgba(74,222,128,0.55)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                       <h3 className="uc-card-title">✏️ Edit Product & Price</h3>
                       <button className="uc-btn" onClick={() => { setEditingDoc(null); setEditDocForm({}); }} style={{ padding: "6px 12px", fontSize: 12 }}>Cancel</button>
@@ -1392,11 +1511,16 @@ export default function UnifiedControlCenterV3() {
                 )}
 
                 <div className="uc-card">
-                  <h3 className="uc-card-title">📋 All Documents ({documents.length})</h3>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <h3 className="uc-card-title" style={{ marginBottom: 0 }}>📋 {normalizedDocumentSearch ? `Matching Documents (${filteredDocuments.length})` : `All Documents (${documents.length})`}</h3>
+                    {normalizedDocumentSearch && <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Showing live search results</span>}
+                  </div>
                   {documents.length === 0 ? (
-                    <p style={{ color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "20px 0" }}>No documents yet. Add your first one above!</p>
+                    <p style={{ color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "20px 0" }}>No documents loaded. Click Refresh, then search again.</p>
+                  ) : filteredDocuments.length === 0 ? (
+                    <p style={{ color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "20px 0" }}>No documents match “{documentSearch}”.</p>
                   ) : (
-                    documents.map(doc => (
+                    filteredDocuments.map(doc => (
                       <div key={doc.id} className="uc-doc-card">
                         <div className="uc-doc-title">{doc.icon || "📄"} {doc.title}</div>
                         <div className="uc-doc-price">KES {doc.price} • {doc.category}</div>
