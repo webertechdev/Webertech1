@@ -65,7 +65,7 @@ export default function LegalDocumentDetail() {
   const [documentData, setDocumentData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
-  const { state: paymentState, pay, reset } = usePayment();
+  const { state: paymentState, pay, reset, refreshStatus } = usePayment();
 
   useEffect(() => {
     let active = true;
@@ -159,7 +159,7 @@ export default function LegalDocumentDetail() {
           </div>
         </div>
       </div>
-      {showPayment && product && <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(15,23,42,.62)", display: "grid", placeItems: "center", padding: 20 }}><div style={{ width: "min(560px, 100%)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 20, padding: 26, position: "relative" }}><button onClick={closePayment} disabled={busy} style={{ position: "absolute", right: 16, top: 12, border: 0, background: "transparent", fontSize: 22, cursor: busy ? "not-allowed" : "pointer", color: "#6b7280" }}>×</button>{busy ? <PaymentStatus state={paymentState} /> : paymentState.step === "failed" ? <><PaymentStatus state={paymentState} onRetry={() => reset()} /><button onClick={reset} style={{ width: "100%", padding: 12, border: 0, borderRadius: 10, background: "#16a34a", color: "#fff", fontWeight: 800 }}>Try again</button></> : <Checkout product={product} onPay={handlePay} submitting={busy} />}</div></div>}
+      {showPayment && product && <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(15,23,42,.62)", display: "grid", placeItems: "center", padding: 20 }}><div style={{ width: "min(560px, 100%)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 20, padding: 26, position: "relative" }}><button onClick={closePayment} disabled={busy} style={{ position: "absolute", right: 16, top: 12, border: 0, background: "transparent", fontSize: 22, cursor: busy ? "not-allowed" : "pointer", color: "#6b7280" }}>×</button>{busy ? <PaymentStatus {...paymentState} product={product} onRefresh={refreshStatus} onRetry={reset} onClose={closePayment} /> : paymentState.step === "failed" ? <><PaymentStatus {...paymentState} product={product} onRefresh={refreshStatus} onRetry={reset} onClose={closePayment} /><button onClick={reset} style={{ width: "100%", padding: 12, border: 0, borderRadius: 10, background: "#16a34a", color: "#fff", fontWeight: 800 }}>Try again</button></> : <Checkout product={product} onPay={handlePay} submitting={busy} />}</div></div>}
       <Footer />
     </>
   );
