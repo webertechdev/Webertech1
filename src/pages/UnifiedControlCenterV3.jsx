@@ -56,6 +56,17 @@ const INBOX_COLLECTIONS = [
   { id: "reports", label: "Reports", icon: "📊", description: "Generated platform, chat, and AI training reports." },
 ];
 
+const LEGAL_SUBCATEGORIES = [
+  { id: "vehicle", label: "Vehicle Documents", emoji: "🚗" },
+  { id: "land", label: "Land Documents", emoji: "🏞️" },
+  { id: "employment", label: "Employment Documents", emoji: "💼" },
+  { id: "business", label: "Business Documents", emoji: "🏢" },
+  { id: "finance", label: "Finance Documents", emoji: "💰" },
+  { id: "rental", label: "Rental Documents", emoji: "🏠" },
+  { id: "court", label: "Court Documents", emoji: "⚖️" },
+  { id: "templates", label: "Business Templates", emoji: "📄" },
+];
+
 const EMPTY_INBOX = INBOX_COLLECTIONS.reduce((result, item) => {
   result[item.id] = [];
   return result;
@@ -321,6 +332,7 @@ export default function UnifiedControlCenterV3() {
     description: "",
     price: 0,
     category: "cyber",
+    subcategory: "templates",
     icon: "📄",
     features: "",
     fileUrl: "",
@@ -837,6 +849,7 @@ export default function UnifiedControlCenterV3() {
         description: newDoc.description,
         price: parseFloat(newDoc.price) || 0,
         category: String(newDoc.category || "cyber").toLowerCase(),
+        subcategory: newDoc.subcategory || "",
         division: String(newDoc.category || "cyber").toLowerCase(),
         type: String(newDoc.category || "cyber").toLowerCase() === "cyber" ? "legal-document" : "service-document",
         icon: newDoc.icon,
@@ -872,6 +885,7 @@ export default function UnifiedControlCenterV3() {
         description: "",
         price: 0,
         category: "cyber",
+        subcategory: "templates",
         icon: "📄",
         features: "",
         fileUrl: "",
@@ -894,6 +908,7 @@ export default function UnifiedControlCenterV3() {
       description: documentRecord.description || "",
       price: documentRecord.price ?? 0,
       category: documentRecord.category || documentRecord.division || "cyber",
+      subcategory: documentRecord.subcategory || "",
       icon: documentRecord.icon || "📄",
       features: Array.isArray(documentRecord.features) ? documentRecord.features.join(", ") : (documentRecord.features || ""),
       published: documentRecord.published !== false,
@@ -950,6 +965,7 @@ export default function UnifiedControlCenterV3() {
         description: String(editDocForm.description || "").trim(),
         price,
         category: String(editDocForm.category || "cyber").toLowerCase(),
+        subcategory: editDocForm.subcategory || "",
         division: String(editDocForm.category || "cyber").toLowerCase(),
         icon: editDocForm.icon || "📄",
         features: String(editDocForm.features || "").trim(),
@@ -1301,15 +1317,39 @@ export default function UnifiedControlCenterV3() {
                       <select
                         className="uc-input"
                         value={newDoc.category}
-                        onChange={e => setNewDoc({ ...newDoc, category: e.target.value })}
+                        onChange={e => {
+                          const cat = e.target.value;
+                          setNewDoc({
+                            ...newDoc,
+                            category: cat,
+                            subcategory: cat === "cyber" ? "templates" : ""
+                          });
+                        }}
                         style={{ cursor: "pointer" }}
                       >
-                        <option value="cyber">Cyber Division</option>
+                        <option value="cyber">Cyber Division (Legal)</option>
                         <option value="academy">Academy</option>
                         <option value="electronics">Electronics</option>
                         <option value="bundles">Bundles</option>
+                        <option value="dev">Dev Services</option>
+                        <option value="hustle">Hustle KE</option>
                       </select>
                     </div>
+                    {newDoc.category === "cyber" && (
+                      <div>
+                        <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Legal Category *</label>
+                        <select
+                          className="uc-input"
+                          value={newDoc.subcategory}
+                          onChange={e => setNewDoc({ ...newDoc, subcategory: e.target.value })}
+                          style={{ cursor: "pointer", border: "1px solid #16a34a" }}
+                        >
+                          {LEGAL_SUBCATEGORIES.map(sub => (
+                            <option key={sub.id} value={sub.id}>{sub.emoji} {sub.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div>
                       <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Icon</label>
                       <input
@@ -1482,8 +1522,19 @@ export default function UnifiedControlCenterV3() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                       <div>
                         <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Category</label>
-                        <select className="uc-input" value={editDocForm.category || "cyber"} onChange={e => setEditDocForm(prev => ({ ...prev, category: e.target.value }))}>
-                          <option value="cyber">Cyber Division</option>
+                        <select
+                          className="uc-input"
+                          value={editDocForm.category || "cyber"}
+                          onChange={e => {
+                            const cat = e.target.value;
+                            setEditDocForm(prev => ({
+                              ...prev,
+                              category: cat,
+                              subcategory: cat === "cyber" ? (prev.subcategory || "templates") : ""
+                            }));
+                          }}
+                        >
+                          <option value="cyber">Cyber Division (Legal)</option>
                           <option value="academy">Academy</option>
                           <option value="electronics">Electronics</option>
                           <option value="bundles">Bundles</option>
@@ -1491,6 +1542,21 @@ export default function UnifiedControlCenterV3() {
                           <option value="hustle">Hustle KE</option>
                         </select>
                       </div>
+                      {editDocForm.category === "cyber" && (
+                        <div>
+                          <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Legal Category *</label>
+                          <select
+                            className="uc-input"
+                            value={editDocForm.subcategory || "templates"}
+                            onChange={e => setEditDocForm(prev => ({ ...prev, subcategory: e.target.value }))}
+                            style={{ cursor: "pointer", border: "1px solid #16a34a" }}
+                          >
+                            {LEGAL_SUBCATEGORIES.map(sub => (
+                              <option key={sub.id} value={sub.id}>{sub.emoji} {sub.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div>
                         <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Icon</label>
                         <input className="uc-input" maxLength="2" value={editDocForm.icon || "📄"} onChange={e => setEditDocForm(prev => ({ ...prev, icon: e.target.value }))} />

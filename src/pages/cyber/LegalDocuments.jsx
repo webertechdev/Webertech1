@@ -15,12 +15,14 @@ const slugify = (value = "") => String(value)
 
 const normalizeDocument = (record, id) => {
   const category = String(record.category || record.division || "cyber").toLowerCase();
+  const subcategory = String(record.subcategory || record.documentCategory || "").toLowerCase();
   const isCyberDocument = category.includes("cyber") || category.includes("legal") || record.type === "legal-document" || record.division === "cyber";
   return {
     id: id || record.id || slugify(record.title),
     ...record,
     slug: record.slug || id || slugify(record.title),
     category,
+    subcategory,
     type: record.type || (isCyberDocument ? "legal-document" : "service"),
     published: record.published !== false,
   };
@@ -28,6 +30,10 @@ const normalizeDocument = (record, id) => {
 
 function belongsToCategory(document, categoryFilter) {
   if (categoryFilter === "all") return true;
+  
+  // Direct subcategory match is the most reliable
+  if (document.subcategory === categoryFilter) return true;
+  
   const haystack = [
     document.category,
     document.subcategory,
@@ -37,7 +43,17 @@ function belongsToCategory(document, categoryFilter) {
   ].filter(Boolean).join(" ").toLowerCase();
 
   if (categoryFilter === "legal") return document.type === "legal-document" || haystack.includes("legal") || haystack.includes("business") || haystack.includes("cyber");
+  
+  // Specific fallbacks for legacy or fuzzy matches
   if (categoryFilter === "vehicle") return /vehicle|car|motorcycle|transport|sale agreement/.test(haystack);
+  if (categoryFilter === "land") return /land|plot|property|title deed/.test(haystack);
+  if (categoryFilter === "employment") return /employment|job|contract|hiring|staff/.test(haystack);
+  if (categoryFilter === "business") return /business|company|partnership|nda|agreement/.test(haystack);
+  if (categoryFilter === "finance") return /finance|loan|debt|payment|invoice/.test(haystack);
+  if (categoryFilter === "rental") return /rental|lease|tenancy|house/.test(haystack);
+  if (categoryFilter === "court") return /court|legal|affidavit|summons/.test(haystack);
+  if (categoryFilter === "templates") return /template|form|generic/.test(haystack);
+
   return haystack.includes(categoryFilter);
 }
 

@@ -24,6 +24,7 @@ function normalize(record, id) {
     description: record.description || "",
     price: Number(record.price || 0),
     category: String(record.category || record.division || "cyber").toLowerCase(),
+    subcategory: String(record.subcategory || "").toLowerCase(),
     division: String(record.division || record.category || "cyber").toLowerCase(),
     type: record.type || "service-document",
     published: record.published !== false,
