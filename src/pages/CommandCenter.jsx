@@ -106,6 +106,35 @@ function paymentStatus(record = {}) {
   return normalized;
 }
 
+function normalizePhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.startsWith("0") ? `254${digits.slice(1)}` : digits;
+}
+
+function identityMatches(record = {}, user = {}) {
+  const selectedId = String(user.uid || user.id || "");
+  const recordIds = [record.customerId, record.userId, record.uid, record.ownerId, record.authenticatedUserId]
+    .filter(Boolean).map(String);
+  const selectedEmail = String(user.email || "").trim().toLowerCase();
+  const recordEmails = [record.customerEmail, record.email, record.userEmail]
+    .filter(Boolean).map(value => String(value).trim().toLowerCase());
+  const selectedPhone = normalizePhone(user.phone || user.profile?.phone);
+  const recordPhones = [record.customerPhone, record.phone, record.paymentNumber, record.receivingNumber, record.payerPhone]
+    .filter(Boolean).map(normalizePhone);
+  return (selectedId && recordIds.includes(selectedId))
+    || (selectedEmail && recordEmails.includes(selectedEmail))
+    || (selectedPhone && recordPhones.includes(selectedPhone));
+}
+
+function isDocumentOrder(order = {}, catalog = []) {
+  const normalizedType = String(order.type || order.productType || "").toLowerCase().replace(/_/g, "-");
+  if (["document", "legal-document", "service-document", "legal-doc"].includes(normalizedType)) return true;
+  const linkedProduct = catalog.find(product => String(product.id || product.productId || "") === String(order.productId || "") || product.slug === order.productSlug) || {};
+  const text = `${order.productTitle || ""} ${order.productSlug || ""} ${linkedProduct.title || ""} ${linkedProduct.category || ""}`.toLowerCase();
+  return /document|agreement|contract|nda|affidavit|certificate|land purchase|car sale/.test(text);
+}
+
 function productModule(order = {}, catalog = []) {
   const linkedProduct = catalog.find(product =>
     String(product.id || product.productId || "") === String(order.productId || "") ||
@@ -395,13 +424,13 @@ export default function CommandCenter() {
   }, [transactions, search]);
 
   const selectedUserId = selectedUser ? (selectedUser.uid || selectedUser.id) : "";
-  const userOrders = selectedUser ? orders.filter(order => order.userId === selectedUserId || order.customerId === selectedUserId || order.customerEmail === selectedUser.email || order.email === selectedUser.email) : [];
-  const userTransactions = selectedUser ? transactions.filter(transaction => transaction.userId === selectedUserId || transaction.customerEmail === selectedUser.email || transaction.email === selectedUser.email || paymentPhone(transaction) === selectedUser.phone) : [];
-  const userChats = selectedUser ? chats.filter(chat => chat.userId === selectedUserId || chat.customerId === selectedUserId || chat.customerEmail === selectedUser.email || chat.email === selectedUser.email) : [];
-  const storedUserDownloads = selectedUser ? downloads.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
+  const userOrders = selectedUser ? orders.filter(order => identityMatches(order, selectedUser)) : [];
+  const userTransactions = selectedUser ? transactions.filter(transaction => identityMatches(transaction, selectedUser)) : [];
+  const userChats = selectedUser ? chats.filter(chat => identityMatches(chat, selectedUser)) : [];
+  const storedUserDownloads = selectedUser ? downloads.filter(item => identityMatches(item, selectedUser) || (item.orderId && userOrders.some(order => String(order.orderId || order.id) === String(item.orderId)))) : [];
   const paidUserDocumentEntitlements = selectedUser ? userOrders
-    .filter(order => ["paid", "completed", "complete"].includes(normalizeStatus(order.status)) && ["document", "legal-document", "service-document"].includes(String(order.type || "").toLowerCase()) && order.productId)
-    .filter(order => !storedUserDownloads.some(download => download.orderId === (order.orderId || order.id)))
+    .filter(order => ["paid", "completed", "complete"].includes(normalizeStatus(order.status)) && isDocumentOrder(order, products) && order.productId)
+    .filter(order => !storedUserDownloads.some(download => String(download.orderId || "") === String(order.orderId || order.id)))
     .map(order => ({
       id: `entitlement-${order.orderId || order.id}`,
       orderId: order.orderId || order.id,
@@ -415,10 +444,10 @@ export default function CommandCenter() {
       createdAt: order.updatedAt || order.createdAt,
     })) : [];
   const userDownloads = [...storedUserDownloads, ...paidUserDocumentEntitlements];
-  const userServices = selectedUser ? services.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
-  const userInvoices = selectedUser ? invoices.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
-  const userNotifications = selectedUser ? notifications.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
-  const userTickets = selectedUser ? supportTickets.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
+  const userServices = selectedUser ? services.filter(item => identityMatches(item, selectedUser)) : [];
+  const userInvoices = selectedUser ? invoices.filter(item => identityMatches(item, selectedUser)) : [];
+  const userNotifications = selectedUser ? notifications.filter(item => identityMatches(item, selectedUser)) : [];
+  const userTickets = selectedUser ? supportTickets.filter(item => identityMatches(item, selectedUser)) : [];
   const userReferrals = selectedUser ? referrals.filter(item => item.userId === selectedUserId || item.referrerId === selectedUserId) : [];
   const userReferralEarnings = selectedUser ? referralEarnings.filter(item => item.referrerId === selectedUserId || item.referredUserId === selectedUserId || item.customerId === selectedUserId) : [];
   const userActivities = selectedUser ? activities.filter(activity => activity.userId === selectedUserId) : [];

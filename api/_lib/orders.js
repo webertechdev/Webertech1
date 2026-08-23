@@ -148,6 +148,62 @@ async function writePaymentLedger(db, order, { status, mpesaRef = "", resultCode
   await db.collection("transactions").doc(order.orderId).set({ ...record, transactionId: order.orderId, createdAt: order.createdAt || serverTimestamp() }, { merge: true });
 }
 
+async function writeCheckoutExperienceRecords(db, order, { status, failReason = "", resultCode = null } = {}) {
+  if (!order?.orderId) return;
+  const normalizedStatus = String(status || "pending").toLowerCase();
+  const title = order.productTitle || order.productSlug || "WeberTech service";
+  const customerName = order.customerName || "there";
+  const isPaid = normalizedStatus === "paid";
+  const outcomeLabel = isPaid ? "Purchase confirmed" : normalizedStatus === "cancelled" ? "Payment cancelled" : "Payment not completed";
+  const customerMessage = isPaid
+    ? `Hi ${customerName}, your purchase of ${title} is confirmed. Thank you for choosing WeberTech. Your service or download is now available from your dashboard. Need help? Reach us through AI Support or online chat.`
+    : normalizedStatus === "cancelled"
+      ? `Hi ${customerName}, your payment for ${title} was cancelled and no charge was completed. You can try again whenever you are ready, or reach us through AI Support or online chat for help.`
+      : `Hi ${customerName}, your payment for ${title} could not be completed${failReason ? `: ${failReason}` : "."} You can retry safely or reach us through AI Support or online chat for help.`;
+  const actionUrl = isPaid ? "/dashboard" : `/cyber/legal-documents/${order.productSlug || ""}`;
+  const shared = {
+    orderId: order.orderId,
+    customerId: order.customerId || null,
+    customerName,
+    customerEmail: order.customerEmail || "",
+    customerPhone: order.customerPhone || "",
+    productId: order.productId || "",
+    productSlug: order.productSlug || "",
+    productTitle: title,
+    service: title,
+    outcome: normalizedStatus,
+    status: "new",
+    resultCode,
+    failReason,
+    actionUrl,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (order.customerId) {
+    await db.collection("notifications").doc(`purchase_${order.orderId}_${normalizedStatus}`).set({
+      ...shared,
+      userId: order.customerId,
+      type: "purchase",
+      title: outcomeLabel,
+      message: customerMessage,
+      read: false,
+      priority: isPaid ? "normal" : "high",
+      timestamp: serverTimestamp(),
+    }, { merge: true });
+  }
+
+  await db.collection("purchase_requests").doc(`${order.orderId}_${normalizedStatus}`).set({
+    ...shared,
+    requestType: "purchase_followup",
+    title: outcomeLabel,
+    message: `${customerMessage} Customer contact: ${order.customerEmail || "no email"} · ${order.customerPhone || "no phone"}.`,
+    priority: isPaid ? "normal" : "high",
+    adminUnread: true,
+    source: "checkout",
+  }, { merge: true });
+}
+
 export async function markOrderFailed(orderId, reason = "", options = {}) {
   const db = getDb();
   const orderRef = db.collection("orders").doc(orderId);
@@ -163,6 +219,7 @@ export async function markOrderFailed(orderId, reason = "", options = {}) {
     updatedAt: serverTimestamp(),
   });
   await writePaymentLedger(db, { ...order, orderId }, { status: "failed", resultCode: options.resultCode ?? null, failReason });
+  await writeCheckoutExperienceRecords(db, { ...order, orderId }, { status: "failed", resultCode: options.resultCode ?? null, failReason });
   return { ...order, orderId, status: "failed", failReason };
 }
 
@@ -180,6 +237,7 @@ export async function markOrderCancelled(orderId, reason = "Payment was cancelle
     updatedAt: serverTimestamp(),
   });
   await writePaymentLedger(db, { ...order, orderId }, { status: "cancelled", resultCode: options.resultCode ?? 1032, failReason: reason });
+  await writeCheckoutExperienceRecords(db, { ...order, orderId }, { status: "cancelled", resultCode: options.resultCode ?? 1032, failReason: reason });
   return { ...order, orderId, status: "cancelled", failReason: reason };
 }
 
@@ -200,6 +258,7 @@ export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, m
       await orderRef.update({ mpesaRef: confirmedRef, updatedAt: serverTimestamp() });
     }
     await writePaymentLedger(db, { ...order, orderId, paymentMethod: method || order.paymentMethod, mpesaRef: confirmedRef }, { status: "paid", mpesaRef: confirmedRef });
+    await writeCheckoutExperienceRecords(db, { ...order, orderId, mpesaRef: confirmedRef }, { status: "paid" });
     return { ...order, orderId, status: "paid", mpesaRef: confirmedRef };
   }
 
@@ -211,6 +270,7 @@ export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, m
 
   await writePaymentLedger(db, { ...order, paymentMethod: method || order.paymentMethod }, { status: "paid", mpesaRef });
   await db.collection("payments").doc(orderId).set({ rawPayload }, { merge: true });
+  await writeCheckoutExperienceRecords(db, { ...order, mpesaRef }, { status: "paid" });
 
   // Product delivery / fulfillment branch
   if (isDocumentOrderType(order.type)) {
