@@ -3,8 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
-import { auth, db, storage, firebaseRuntime } from "../config/firebase";
+import { auth, db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
@@ -38,12 +37,39 @@ function withTimeout(promise, timeoutMs, message) {
   });
 }
 
-function normalizeHttpUrl(value) {
+function normalizeDirectPdfUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
   try {
-    const parsed = new URL((value || "").trim());
-    return /^https?:$/.test(parsed.protocol) ? parsed.toString() : "";
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:") return "";
+
+    if (parsed.hostname === "drive.google.com") {
+      const fileId = parsed.pathname.match(/\/file\/d\/([^/]+)/)?.[1] || parsed.searchParams.get("id");
+      if (fileId) return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
+    }
+
+    if (parsed.hostname === "www.dropbox.com" || parsed.hostname === "dropbox.com") {
+      parsed.searchParams.set("dl", "1");
+    }
+
+    const pathname = parsed.pathname.toLowerCase();
+    const isKnownProvider = parsed.hostname === "drive.google.com" || parsed.hostname.endsWith("dropbox.com");
+    if (!pathname.endsWith(".pdf") && !isKnownProvider) return "";
+    return parsed.toString();
   } catch {
     return "";
+  }
+}
+
+function hostedFileName(value) {
+  try {
+    const parsed = new URL(value);
+    const candidate = decodeURIComponent(parsed.pathname.split("/").pop() || "");
+    return /\\.pdf$/i.test(candidate) ? candidate : "Hosted PDF document";
+  } catch {
+    return "Hosted PDF document";
   }
 }
 
@@ -307,10 +333,7 @@ function AdminInbox({ inboxData, inboxFilter, setInboxFilter, inboxLoading, refr
 export default function UnifiedControlCenterV3() {
   const [tab, setTab] = useState("overview");
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState("");
-  const [storageDiagnostic, setStorageDiagnostic] = useState("");
+  const [linkError, setLinkError] = useState("");
   const [documents, setDocuments] = useState([]);
   const [chats, setChats] = useState([]);
   const [inboxData, setInboxData] = useState(EMPTY_INBOX);
@@ -327,7 +350,7 @@ export default function UnifiedControlCenterV3() {
   const [refreshingChat, setRefreshingChat] = useState(false);
   const [adminReply, setAdminReply] = useState("");
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [newDoc, setNewDoc] = useState({
+  const emptyDocumentForm = {
     title: "",
     description: "",
     price: 0,
@@ -337,7 +360,8 @@ export default function UnifiedControlCenterV3() {
     features: "",
     fileUrl: "",
     fileName: "",
-  });
+  };
+  const [newDoc, setNewDoc] = useState(emptyDocumentForm);
   const [editingDoc, setEditingDoc] = useState(null);
   const [editDocForm, setEditDocForm] = useState({});
   const [documentSearch, setDocumentSearch] = useState("");
@@ -358,7 +382,6 @@ export default function UnifiedControlCenterV3() {
     documentsCount: 0,
   });
   const chatEndRef = useRef(null);
-  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!editingDoc) return;
@@ -653,13 +676,6 @@ export default function UnifiedControlCenterV3() {
 
   useEffect(() => {
     refreshData();
-    if (firebaseRuntime.missing.length > 0) {
-      setStorageDiagnostic(
-        `Firebase configuration is incomplete. Missing: ${firebaseRuntime.missing.join(", ")}.`
-      );
-    } else if (!firebaseRuntime.storageBucket) {
-      setStorageDiagnostic("Firebase Storage bucket is not configured for this deployment.");
-    }
   }, []);
 
   // Load chat messages only when a chat is selected or the admin presses refresh.
@@ -688,152 +704,30 @@ export default function UnifiedControlCenterV3() {
     loadChatMessages(selectedChat);
   }, [selectedChat?.id]);
 
-  // Handle file selection with resumable progress and a hard timeout
-  const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Add a document from a public HTTPS PDF link. No Firebase Storage upload is
+  // attempted, so this path remains free to operate on the Firestore plan.
 
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-    ];
-    const maxSize = 20 * 1024 * 1024;
-    if (file.size > maxSize) {
-      toast.error("File is too large. Please upload a file smaller than 20 MB.");
-      e.target.value = "";
-      return;
-    }
-    if (file.type && !allowedTypes.includes(file.type)) {
-      toast.error("Unsupported file type. Upload a PDF, DOC/DOCX, JPG, PNG, or GIF.");
-      e.target.value = "";
-      return;
-    }
-
-    if (firebaseRuntime.missing.length > 0) {
-      const message = `Firebase configuration is incomplete. Missing: ${firebaseRuntime.missing.join(", ")}.`;
-      setUploadError(message);
-      toast.error(message);
-      e.target.value = "";
-      return;
-    }
-    if (!firebaseRuntime.storageBucket) {
-      const message = "Firebase Storage bucket is not configured for this deployment.";
-      setUploadError(message);
-      toast.error(message);
-      e.target.value = "";
-      return;
-    }
-
-    setUploading(true);
-    setUploadError("");
-    setStorageDiagnostic("");
-    setUploadProgress(0);
-    const toastId = toast.loading("📤 Uploading file... 0%");
-    let uploadTask;
-    let resumableError;
-
-    try {
-      console.log("📤 Starting upload:", file.name, file.size, "bytes");
-      const storageRef = ref(storage, `documents/${Date.now()}_${file.name}`);
-      const metadata = {
-        contentType: file.type || "application/octet-stream",
-        cacheControl: "public,max-age=3600",
-      };
-      let startTimer;
-      const uploadPromise = new Promise((resolve, reject) => {
-        uploadTask = uploadBytesResumable(storageRef, file, metadata);
-        startTimer = setTimeout(() => {
-          uploadTask?.cancel?.();
-          reject(new Error("Firebase Storage did not start after 20 seconds. Check the Storage bucket and rules."));
-        }, 20000);
-        uploadTask.on(
-          "state_changed",
-          snapshot => {
-            clearTimeout(startTimer);
-            const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-            setUploadProgress(progress);
-            toast.loading(`📤 Uploading file... ${progress}%`, { id: toastId });
-          },
-          error => {
-            clearTimeout(startTimer);
-            reject(error);
-          },
-          () => {
-            clearTimeout(startTimer);
-            resolve(uploadTask.snapshot);
-          }
-        );
-      });
-
-      let snapshot;
-      try {
-        snapshot = await withTimeout(
-          uploadPromise,
-          120000,
-          "File upload timed out. Check your connection and try again."
-        );
-      } catch (err) {
-        resumableError = err;
-        console.warn("Resumable upload failed; trying one-shot upload:", err);
-        toast.loading("📤 Retrying direct upload...", { id: toastId });
-        setUploadProgress(0);
-        snapshot = await withTimeout(
-          uploadBytes(storageRef, file, metadata),
-          30000,
-          "Direct upload timed out. Verify Firebase Storage is enabled and try again."
-        );
-      }
-      const fileUrl = await withTimeout(
-        getDownloadURL(snapshot.ref),
-        15000,
-        "The file uploaded but its download link could not be created."
-      );
-
-      setNewDoc(prev => ({ ...prev, fileUrl, fileName: file.name }));
-      setUploadProgress(100);
-      toast.success("✅ File uploaded! Ready to add document.", { id: toastId });
-    } catch (err) {
-      uploadTask?.cancel?.();
-      console.error("Upload error:", err);
-      const message = err?.message || resumableError?.message || "Unable to upload the file.";
-      setUploadError(message);
-      setStorageDiagnostic(
-        message.includes("Storage") || message.includes("bucket")
-          ? "Upload could not reach Firebase Storage. Verify the Vercel Storage bucket environment variable and Firebase Storage Rules."
-          : "Upload failed before the file could be saved."
-      );
-      toast.error(`Upload failed: ${message}`, { id: toastId });
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-      e.target.value = "";
-    }
-  };
-
-  // Add new document
   const handleAddDocument = async () => {
-    if (uploading) {
-      toast.error("Please wait for the file upload to finish.");
+    if (!newDoc.title || String(newDoc.title).trim().length < 2) {
+      toast.error("❌ Add a document title.");
       return;
     }
-    if (!newDoc.title || !newDoc.price) {
-      toast.error("❌ Title and price are required");
+    const price = Number(newDoc.price);
+    if (!Number.isFinite(price) || price < 0 || price > 1000000) {
+      toast.error("Enter a valid price between KES 0 and KES 1,000,000.");
       return;
     }
-    if (!newDoc.fileUrl) {
-      toast.error("Upload a file or paste a hosted document URL before adding it.");
-      return;
-    }
-    const fileUrl = normalizeHttpUrl(newDoc.fileUrl);
+    const fileUrl = normalizeDirectPdfUrl(newDoc.fileUrl);
     if (!fileUrl) {
-      toast.error("Enter a valid public http:// or https:// document URL.");
+      const message = "Paste a public HTTPS PDF link. Google Drive share links are accepted and normalized automatically.";
+      setLinkError(message);
+      toast.error(message);
       return;
     }
-    const fileName = newDoc.fileName || fileUrl.split("/").pop()?.split("?")[0] || "Hosted document";
+    const fileName = newDoc.fileName && newDoc.fileName !== "Hosted PDF document"
+      ? newDoc.fileName
+      : hostedFileName(fileUrl);
+    setLinkError("");
 
     setLoading(true);
     toast.loading("💾 Adding document...");
@@ -847,7 +741,7 @@ export default function UnifiedControlCenterV3() {
       const docData = {
         title: newDoc.title,
         description: newDoc.description,
-        price: parseFloat(newDoc.price) || 0,
+        price,
         category: String(newDoc.category || "cyber").toLowerCase(),
         subcategory: newDoc.subcategory || "",
         division: String(newDoc.category || "cyber").toLowerCase(),
@@ -880,18 +774,8 @@ export default function UnifiedControlCenterV3() {
       toast.dismiss();
       toast.success("✅ Document added successfully!");
 
-      setNewDoc({
-        title: "",
-        description: "",
-        price: 0,
-        category: "cyber",
-        subcategory: "templates",
-        icon: "📄",
-        features: "",
-        fileUrl: "",
-        fileName: "",
-      });
-      setUploadError("");
+      setNewDoc({ ...emptyDocumentForm });
+      setLinkError("");
     } catch (err) {
       console.error("Add doc error:", err);
       toast.dismiss();
@@ -911,6 +795,8 @@ export default function UnifiedControlCenterV3() {
       subcategory: documentRecord.subcategory || "",
       icon: documentRecord.icon || "📄",
       features: Array.isArray(documentRecord.features) ? documentRecord.features.join(", ") : (documentRecord.features || ""),
+      fileUrl: documentRecord.fileUrl || documentRecord.downloadURL || documentRecord.downloadFile || documentRecord.documentUrl || documentRecord.url || "",
+      fileName: documentRecord.fileName || "",
       published: documentRecord.published !== false,
     });
   };
@@ -957,6 +843,11 @@ export default function UnifiedControlCenterV3() {
       toast.error("Enter a valid price between KES 0 and KES 1,000,000.");
       return;
     }
+    const fileUrl = normalizeDirectPdfUrl(editDocForm.fileUrl);
+    if (!fileUrl) {
+      toast.error("A public HTTPS PDF link is required for this document.");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -969,6 +860,8 @@ export default function UnifiedControlCenterV3() {
         division: String(editDocForm.category || "cyber").toLowerCase(),
         icon: editDocForm.icon || "📄",
         features: String(editDocForm.features || "").trim(),
+        fileUrl,
+        fileName: editDocForm.fileName || hostedFileName(fileUrl),
         published: editDocForm.published !== false,
         status: editDocForm.published !== false ? "active" : "draft",
         updatedAt: serverTimestamp(),
@@ -988,7 +881,7 @@ export default function UnifiedControlCenterV3() {
   };
 
   // Delete document
-  const handleDeleteDocument = async (docId, fileUrl) => {
+  const handleDeleteDocument = async (docId) => {
     if (!confirm("Delete this document?")) return;
     setLoading(true);
 
@@ -996,16 +889,6 @@ export default function UnifiedControlCenterV3() {
       console.log("🗑️ Deleting document:", docId);
 
       await deleteDoc(doc(db, "products", docId));
-
-      if (fileUrl) {
-        try {
-          const fileRef = ref(storage, fileUrl);
-          await deleteObject(fileRef);
-          console.log("🗑️ File deleted from storage");
-        } catch (err) {
-          console.warn("File deletion skipped:", err);
-        }
-      }
 
       toast.success("✅ Document deleted!");
       await refreshData();
@@ -1231,11 +1114,9 @@ export default function UnifiedControlCenterV3() {
               {loading ? "⟳ Refreshing..." : "🔄 Refresh"}
             </button>
           </div>
-          {storageDiagnostic && (
-            <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(220,38,38,0.16)", border: "1px solid rgba(252,165,165,0.55)", color: "#fecaca", fontSize: 13 }}>
-              ⚠️ {storageDiagnostic}
-            </div>
-          )}
+          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(22,163,74,0.12)", border: "1px solid rgba(134,239,172,0.35)", color: "#bbf7d0", fontSize: 13 }}>
+            ✅ Free document mode: paste a public HTTPS PDF link. No Firebase Storage or R2 billing is used.
+          </div>
         </div>
 
         <div className="uc-layout">
@@ -1378,62 +1259,36 @@ export default function UnifiedControlCenterV3() {
                     onChange={e => setNewDoc({ ...newDoc, features: e.target.value })}
                   />
 
-                  <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Upload Document File</label>
-                  <div
-                    className="uc-file-upload"
-                    onClick={() => {
-                      if (!loading && !uploading) fileInputRef.current?.click();
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>📤</span>
-                    <div>
-                      <div style={{ color: "#fff", fontWeight: 700 }}>Click to upload or drag and drop</div>
-                      <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>PDF, DOCX, or images</div>
-                      {newDoc.fileName && <div className="uc-file-name">✅ {newDoc.fileName}</div>}
-                      {uploadError && <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 6 }}>⚠️ {uploadError}</div>}
-                    </div>
-                  </div>
-                  {uploadProgress > 0 && uploadProgress < 100 && (
-                    <div className="uc-progress">
-                      <div className="uc-progress-bar" style={{ width: `${uploadProgress}%` }}></div>
-                    </div>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileSelect}
-                    style={{ display: "none" }}
-                    accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.gif"
-                    disabled={loading || uploading}
-                  />
-
-                  <div style={{ marginTop: 14, padding: 14, borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }}>
-                    <label style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>
-                      Or use a hosted document URL
+                  <div style={{ marginTop: 8, padding: 16, borderRadius: 12, background: "rgba(22,163,74,0.08)", border: "1px solid rgba(134,239,172,0.3)" }}>
+                    <label style={{ color: "#bbf7d0", fontSize: 12, fontWeight: 800, marginBottom: 7, display: "block" }}>
+                      Public PDF link *
                     </label>
                     <input
                       className="uc-input"
                       type="url"
-                      placeholder="https://your-public-host.com/document.pdf"
+                      placeholder="https://example.com/my-document.pdf"
                       value={newDoc.fileUrl}
                       onChange={e => {
                         const value = e.target.value;
                         setNewDoc(prev => ({
                           ...prev,
                           fileUrl: value,
-                          fileName: value ? "Hosted document" : "",
+                          fileName: value ? hostedFileName(normalizeDirectPdfUrl(value) || value) : "",
                         }));
-                        setUploadError("");
+                        setLinkError("");
                       }}
-                      disabled={loading || uploading}
+                      disabled={loading}
+                      aria-label="Public PDF link"
                     />
-                    <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, lineHeight: 1.5 }}>
-                      Store the PDF/DOCX in Google Drive, Dropbox, or your own website, enable public access, and paste its direct HTTPS link here. The link must open without login.
+                    <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 11, lineHeight: 1.55, marginTop: 8 }}>
+                      Upload the PDF to a public host first, then paste the link. Google Drive “Anyone with the link” URLs and Dropbox shared links are accepted and normalized. The link must open without a login and return a PDF.
                     </div>
+                    {newDoc.fileName && <div className="uc-file-name" style={{ marginTop: 8 }}>📎 {newDoc.fileName}</div>}
+                    {linkError && <div style={{ color: "#fca5a5", fontSize: 12, marginTop: 8 }}>⚠️ {linkError}</div>}
                   </div>
 
-                  <button className="uc-btn" onClick={handleAddDocument} disabled={loading || uploading} style={{ width: "100%", marginTop: 16 }}>
-                    {uploading ? "⟳ Uploading..." : loading ? "⟳ Adding..." : "✅ Add Document"}
+                  <button className="uc-btn" onClick={handleAddDocument} disabled={loading} style={{ width: "100%", marginTop: 16 }}>
+                    {loading ? "⟳ Publishing..." : "✅ Publish document"}
                   </button>
                 </div>
 
@@ -1566,6 +1421,15 @@ export default function UnifiedControlCenterV3() {
                     <textarea className="uc-textarea" value={editDocForm.description || ""} onChange={e => setEditDocForm(prev => ({ ...prev, description: e.target.value }))} />
                     <label style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>Features (comma-separated)</label>
                     <input className="uc-input" value={editDocForm.features || ""} onChange={e => setEditDocForm(prev => ({ ...prev, features: e.target.value }))} />
+                    <label style={{ color: "#bbf7d0", fontSize: 12, fontWeight: 800, margin: "14px 0 6px", display: "block" }}>Public PDF link *</label>
+                    <input
+                      className="uc-input"
+                      type="url"
+                      placeholder="https://example.com/my-document.pdf"
+                      value={editDocForm.fileUrl || ""}
+                      onChange={e => setEditDocForm(prev => ({ ...prev, fileUrl: e.target.value, fileName: hostedFileName(normalizeDirectPdfUrl(e.target.value) || e.target.value) }))}
+                    />
+                    <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11, lineHeight: 1.5, marginTop: 6 }}>Use a public HTTPS PDF. Drive share links are normalized when saved.</div>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.8)", fontSize: 13, marginTop: 14 }}>
                       <input type="checkbox" checked={editDocForm.published !== false} onChange={e => setEditDocForm(prev => ({ ...prev, published: e.target.checked }))} />
                       Published in the customer catalog
