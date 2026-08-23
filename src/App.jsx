@@ -13,9 +13,7 @@ import { auth, db }            from "./config/firebase";
 import Home        from "./pages/Home";
 import Academy     from "./pages/Academy";
 import Electronics from "./pages/Electronics";
-import Cyber         from "./pages/StubPage";
 import CyberHomeEnhanced from "./pages/cyber/CyberHomeEnhanced";
-import CyberHome           from "./pages/StubPage";
 import LegalDocuments      from "./pages/cyber/LegalDocuments";
 import LegalDocumentDetail from "./pages/cyber/LegalDocumentDetail";
 import Government from "./pages/cyber/Government";
@@ -26,19 +24,17 @@ import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import Dev         from "./pages/Dev";
-import Hustle      from "./pages/StubPage";
-import Dashboard   from "./pages/StubPage";
+import Hustle      from "./pages/Hustle";
 import DashboardV3 from "./pages/DashboardV3";
-import Admin       from "./pages/StubPage";
 import AdminEnhanced from "./pages/AdminEnhanced";
 import CommandCenter from "./pages/CommandCenter";
 import AdminShowcase from "./pages/AdminShowcase";
 import UnifiedControlCenter from "./pages/UnifiedControlCenterV3";
-import NotFound    from "./pages/StubPage";
+import NotFound    from "./pages/NotFound";
 import ChatWidget from "./pages/ChatWidgetEnhanced";
-import About from "./pages/StubPage";
-import Privacy from "./pages/StubPage";
-import Terms from "./pages/StubPage";
+import About from "./pages/About";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 // ── Route guards ────────────────────────────────────────────────
 function Protected({ user, loading, children }) {
