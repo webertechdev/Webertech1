@@ -220,6 +220,7 @@ export default function ChatWidgetEnhanced() {
         lang,
         updatedAt:    serverTimestamp(),
         status:       "active",
+        chatMode:     chatData.chatMode || (chatData.adminTakeover ? "admin" : "ai"),
         adminTakeover: chatData.adminTakeover || false
       }, { merge: true });
 
@@ -271,9 +272,11 @@ export default function ChatWidgetEnhanced() {
     setLoading(true);
 
     try {
-      // Check if admin has taken over
+      // Respect the per-chat mode selected by Admin Support.
       const chatSnap = await getDoc(doc(db, "chats", sessionId));
-      if (chatSnap.exists() && chatSnap.data().adminTakeover) {
+      const chatData = chatSnap.exists() ? chatSnap.data() : {};
+      const adminMode = chatData.chatMode === "admin" || chatData.adminTakeover === true;
+      if (adminMode) {
         setLoading(false);
         return; // Admin is in control, AI stays silent
       }

@@ -347,6 +347,8 @@ export default function UnifiedControlCenterV3() {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [chatRetention, setChatRetention] = useState("off");
+  const [chatModeSaving, setChatModeSaving] = useState(false);
   const [refreshingChat, setRefreshingChat] = useState(false);
   const [adminReply, setAdminReply] = useState("");
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -446,18 +448,31 @@ export default function UnifiedControlCenterV3() {
       setDocuments(allDocs);
       console.log("✅ Documents loaded:", allDocs.length);
 
-      // Fetch chats - filter for recent ones (last 7 days)
+      // Load the complete chat history. Retention only controls what is shown;
+      // no chat or message is deleted automatically.
       const chatsSnap = await withTimeout(
         getDocs(collection(db, "chats")),
         15000,
         "Loading chats timed out. Click Refresh to try again."
       );
-      const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      const retentionMs = {
+        week: 7 * 24 * 60 * 60 * 1000,
+        month: 30 * 24 * 60 * 60 * 1000,
+        quarter: 90 * 24 * 60 * 60 * 1000,
+        year: 365 * 24 * 60 * 60 * 1000,
+      }[chatRetention];
+      const cutoff = retentionMs ? Date.now() - retentionMs : 0;
       const allChats = chatsSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(c => {
+          if (!cutoff) return true;
           const timestamp = c.updatedAt?.toMillis?.() || c.createdAt?.toMillis?.() || 0;
-          return timestamp > sevenDaysAgo;
+          return timestamp >= cutoff;
+        })
+        .sort((a, b) => {
+          const aTime = a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
+          const bTime = b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
+          return bTime - aTime;
         });
 
       const activeChatsCount = allChats.filter(c => c.status === "active" || (c.lastMessage && !c.resolved)).length;
@@ -489,7 +504,9 @@ export default function UnifiedControlCenterV3() {
         );
         const aiConfig = aiSnap.docs.find(d => d.id === "weberai");
         if (aiConfig?.exists()) {
-          setAiTraining(prev => ({ ...prev, ...aiConfig.data() }));
+          const configData = aiConfig.data();
+          setAiTraining(prev => ({ ...prev, ...configData }));
+          if (configData.chatRetention) setChatRetention(configData.chatRetention);
           console.log("✅ AI config loaded");
         }
       } catch (err) {
@@ -1008,6 +1025,42 @@ export default function UnifiedControlCenterV3() {
     setTrainerCorrection("");
   };
 
+  const handleChatModeChange = async (mode) => {
+    if (!selectedChat || chatModeSaving) return;
+    setChatModeSaving(true);
+    const adminTakeover = mode === "admin";
+    try {
+      await setDoc(doc(db, "chats", selectedChat.id), {
+        chatMode: mode,
+        adminTakeover,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      const updated = { ...selectedChat, chatMode: mode, adminTakeover };
+      setSelectedChat(updated);
+      setChats(prev => prev.map(chat => chat.id === updated.id ? updated : chat));
+      toast.success(mode === "admin" ? "Admin Agent is now replying in this chat." : "WeberAI is now replying in this chat.");
+    } catch (error) {
+      toast.error("Could not change chat mode: " + error.message);
+    } finally {
+      setChatModeSaving(false);
+    }
+  };
+
+  const handleChatRetentionChange = async (event) => {
+    const value = event.target.value;
+    setChatRetention(value);
+    try {
+      await setDoc(doc(db, "config", "weberai"), {
+        chatRetention: value,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      toast.success(value === "off" ? "Chat history will remain visible permanently." : `Chat visibility set to ${value}. Existing chats are not deleted.`);
+      await refreshData();
+    } catch (error) {
+      toast.error("Could not save chat retention: " + error.message);
+    }
+  };
+
   // Send admin reply
   const handleSendReply = async () => {
     if (!adminReply.trim() || !selectedChat) return;
@@ -1025,6 +1078,7 @@ export default function UnifiedControlCenterV3() {
       await setDoc(doc(db, "chats", selectedChat.id), {
         lastMessage: adminReply,
         updatedAt: serverTimestamp(),
+        chatMode: "admin",
         adminTakeover: true,
       }, { merge: true });
 
@@ -1723,7 +1777,19 @@ export default function UnifiedControlCenterV3() {
             {tab === "support" && (
               <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16 }}>
                 <div className="uc-card" style={{ maxHeight: "600px", overflowY: "auto" }}>
-                  <h3 className="uc-card-title">💬 Chats ({chats.length})</h3>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <h3 className="uc-card-title" style={{ marginBottom: 4 }}>💬 Chats ({chats.length})</h3>
+                      <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, margin: 0 }}>History is never deleted automatically.</p>
+                    </div>
+                    <select value={chatRetention} onChange={handleChatRetentionChange} aria-label="Chat history retention" style={{ background: "#0f172a", color: "#fff", border: "1px solid rgba(134,239,172,0.5)", borderRadius: 7, padding: "6px 8px", fontSize: 11 }}>
+                      <option value="off">Disappear: Off</option>
+                      <option value="week">Disappear after 1 week</option>
+                      <option value="month">Disappear after 1 month</option>
+                      <option value="quarter">Disappear after 3 months</option>
+                      <option value="year">Disappear after 1 year</option>
+                    </select>
+                  </div>
                   {chats.length === 0 ? (
                     <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 13 }}>No chats yet.</p>
                   ) : (
@@ -1742,7 +1808,8 @@ export default function UnifiedControlCenterV3() {
                         }}
                       >
                         <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 13 }}>{chat.customerName || "Customer"}</div>
-                        <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, marginTop: 4 }}>{chat.lastMessage?.substring(0, 40)}...</div>
+                        <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, marginTop: 4 }}>{chat.lastMessage?.substring(0, 40) || "No messages yet"}...</div>
+                        <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10, marginTop: 5 }}>{formatInboxDate(chat.updatedAt || chat.createdAt)} · {chat.chatMode === "admin" || chat.adminTakeover ? "Admin Agent" : "AI"}</div>
                       </div>
                     ))
                   )}
@@ -1752,13 +1819,22 @@ export default function UnifiedControlCenterV3() {
                   {selectedChat ? (
                     <>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                        <h3 className="uc-card-title">💬 Chat with {selectedChat.customerName || "Customer"}</h3>
+                        <div>
+                          <h3 className="uc-card-title" style={{ marginBottom: 4 }}>💬 Chat with {selectedChat.customerName || "Customer"}</h3>
+                          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>{selectedChat.userEmail || "Anonymous"} · Opened/updated {formatInboxDate(selectedChat.updatedAt || selectedChat.createdAt)}</div>
+                        </div>
                         <button onClick={() => loadChatMessages(selectedChat)} disabled={refreshingChat} aria-label="Refresh selected chat" style={{ border: "1px solid rgba(74,222,128,0.45)", background: "rgba(22,163,74,0.15)", color: "#86efac", borderRadius: 8, padding: "7px 10px", cursor: refreshingChat ? "wait" : "pointer", fontWeight: 700 }}>{refreshingChat ? "…" : "↻ Refresh"}</button>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "12px 0" }}>
+                        <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Reply mode:</span>
+                        <button onClick={() => handleChatModeChange("ai")} disabled={chatModeSaving} style={{ border: "1px solid #22c55e", background: (selectedChat.chatMode !== "admin" && !selectedChat.adminTakeover) ? "#16a34a" : "transparent", color: "#fff", borderRadius: 7, padding: "6px 10px", cursor: "pointer", fontSize: 12 }}>🤖 AI Support</button>
+                        <button onClick={() => handleChatModeChange("admin")} disabled={chatModeSaving} style={{ border: "1px solid #f59e0b", background: (selectedChat.chatMode === "admin" || selectedChat.adminTakeover) ? "#b45309" : "transparent", color: "#fff", borderRadius: 7, padding: "6px 10px", cursor: "pointer", fontSize: 12 }}>👤 Admin Agent</button>
+                        <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>{(selectedChat.chatMode === "admin" || selectedChat.adminTakeover) ? "AI paused for this chat" : "AI answers by default"}</span>
                       </div>
                       <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 16, minHeight: 300, maxHeight: 400, overflowY: "auto", marginBottom: 16 }}>
                         {chatMessages.map(msg => (
-                          <div
-                            key={msg.id}
+                              <div
+                              key={msg.id}
                             style={{
                               marginBottom: 12,
                               textAlign: msg.sender === "admin" ? "right" : "left",
@@ -1775,6 +1851,7 @@ export default function UnifiedControlCenterV3() {
                                 fontSize: 13,
                               }}
                             >
+                              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{msg.sender === "admin" ? "Admin Agent" : msg.sender === "ai" ? "WeberAI" : "Customer"} · {formatInboxDate(msg.timestamp)}</div>
                               {msg.text}
                             </div>
                           </div>
