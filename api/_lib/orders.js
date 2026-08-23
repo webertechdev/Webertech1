@@ -20,6 +20,53 @@ function serverTimestamp() {
   return FieldValue.serverTimestamp();
 }
 
+function amountAsNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+async function creditReferralCommission(db, order) {
+  const buyerId = order.customerId;
+  const amount = amountAsNumber(order.amount);
+  if (!buyerId || !amount) return null;
+
+  const userSnap = await db.collection("users").doc(buyerId).get();
+  if (!userSnap.exists) return null;
+  const user = userSnap.data() || {};
+  const referrerId = user.referredById || user.referrerId || null;
+  if (!referrerId || referrerId === buyerId) return null;
+
+  const commissionAmount = Math.round(amount * 0.10 * 100) / 100;
+  if (!commissionAmount) return null;
+
+  const earningRef = db.collection("referralEarnings").doc(`${order.orderId}_${buyerId}`);
+  try {
+    await earningRef.create({
+      orderId: order.orderId,
+      referrerId,
+      referredUserId: buyerId,
+      orderAmount: amount,
+      commissionRate: 0.10,
+      commissionAmount,
+      currency: order.currency || "KES",
+      status: "credited",
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    // The deterministic ID makes repeated webhook delivery safe.
+    if (error?.code === 6 || error?.code === "already-exists") return null;
+    throw error;
+  }
+
+  await db.collection("referrals").doc(referrerId).set({
+    userId: referrerId,
+    totalEarnings: FieldValue.increment(commissionAmount),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  return { referrerId, commissionAmount };
+}
+
 export async function createPendingOrder({
   orderId,
   customerId = null,
@@ -128,6 +175,13 @@ export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, m
       notes: "",
       createdAt: serverTimestamp(),
     });
+  }
+
+  try {
+    await creditReferralCommission(db, order);
+  } catch (error) {
+    // Referral accounting must not block confirmed payment fulfillment.
+    console.warn("Referral commission could not be credited:", error?.message || error);
   }
 
   return { ...order, status: "paid" };

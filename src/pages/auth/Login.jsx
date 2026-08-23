@@ -1,6 +1,6 @@
 // src/pages/auth/Login.jsx
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "../../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
@@ -11,7 +11,9 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const referralQuery = searchParams.get("ref") || searchParams.get("referral") || "";
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -91,7 +93,7 @@ export default function Login() {
           </button>
 
           <p style={footer}>
-            Don't have an account? <Link to="/auth/register" style={link}>Sign up</Link>
+            Don't have an account? <Link to={referralQuery ? `/auth/register?ref=${encodeURIComponent(referralQuery)}` : "/auth/register"} style={link}>Sign up</Link>
           </p>
         </div>
       </div>

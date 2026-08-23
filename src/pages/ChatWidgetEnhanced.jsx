@@ -8,9 +8,10 @@ import {
   doc, setDoc, getDoc, getDocs, query, orderBy, where, onSnapshot
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { toast, Toaster } from "react-hot-toast";
 import { playMessageNotificationSound } from "../utils/chatNotifications";
+import { ensureReferralProfile, findReferrerByCode, normalizeReferralCode } from "../utils/referrals";
 
 const BUNDLES_URL  = "https://bundles.webertech.co.ke";
 const WHATSAPP_URL = "https://wa.me/254722508904";
@@ -184,6 +185,11 @@ export default function ChatWidgetEnhanced() {
   const [authMode,    setAuthMode]    = useState("login"); // "login" | "register"
   const [authEmail,   setAuthEmail]   = useState("");
   const [authPass,    setAuthPass]    = useState("");
+  const [authFirstName, setAuthFirstName] = useState("");
+  const [authLastName, setAuthLastName] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
+  const [authConfirmPass, setAuthConfirmPass] = useState("");
+  const [authReferralCode, setAuthReferralCode] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -204,6 +210,8 @@ export default function ChatWidgetEnhanced() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, u => setCurrentUser(u));
+    const queryCode = new URLSearchParams(window.location.search).get("ref") || new URLSearchParams(window.location.search).get("referral") || "";
+    if (queryCode) setAuthReferralCode(normalizeReferralCode(queryCode));
     return () => unsub();
   }, []);
 
@@ -461,19 +469,57 @@ export default function ChatWidgetEnhanced() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
+    if (authMode === "register" && authPass !== authConfirmPass) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    if (authMode === "register" && authPass.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
     setAuthLoading(true);
     try {
       if (authMode === "login") {
-        await signInWithEmailAndPassword(auth, authEmail, authPass);
+        await signInWithEmailAndPassword(auth, authEmail.trim(), authPass);
         toast.success("Welcome back!");
       } else {
-        await createUserWithEmailAndPassword(auth, authEmail, authPass);
-        toast.success("Account created!");
+        const referralCode = normalizeReferralCode(authReferralCode);
+        const referrer = referralCode ? await findReferrerByCode(db, referralCode) : null;
+        const { user } = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPass);
+        const displayName = `${authFirstName.trim()} ${authLastName.trim()}`.trim();
+        await updateProfile(user, { displayName });
+        await setDoc(doc(db, "users", user.uid), {
+          uid: user.uid,
+          firstName: authFirstName.trim(),
+          lastName: authLastName.trim(),
+          email: authEmail.trim().toLowerCase(),
+          phone: authPhone.trim(),
+          role: "customer",
+          status: "active",
+          referralCode: "",
+          referredById: referrer?.userId || referrer?.id || null,
+          referredByCode: referrer?.code || "",
+          referralJoinedAt: referrer ? serverTimestamp() : null,
+          joinedAt: serverTimestamp(),
+          lastLogin: serverTimestamp(),
+        }, { merge: true });
+        const referralProfile = await ensureReferralProfile(db, user, {
+          referrerId: referrer?.userId || referrer?.id || null,
+          referredByCode: referrer?.code || "",
+        });
+        await setDoc(doc(db, "users", user.uid), {
+          referralCode: referralProfile?.code || "",
+          referredById: referrer?.userId || referrer?.id || null,
+          referredByCode: referrer?.code || "",
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        toast.success(referrer ? "Account created. Referral linked!" : "Account created!");
       }
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err.message || "Authentication failed");
+    } finally {
+      setAuthLoading(false);
     }
-    setAuthLoading(false);
   };
 
   const handleGoogleAuth = async () => {
@@ -537,6 +583,15 @@ export default function ChatWidgetEnhanced() {
               </div>
 
               <form onSubmit={handleAuth} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {authMode === "register" && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <input type="text" placeholder="First name" required value={authFirstName} onChange={e => setAuthFirstName(e.target.value)} style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, minWidth: 0 }} autoComplete="given-name" />
+                      <input type="text" placeholder="Last name" required value={authLastName} onChange={e => setAuthLastName(e.target.value)} style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, minWidth: 0 }} autoComplete="family-name" />
+                    </div>
+                    <input type="tel" placeholder="Phone number" required value={authPhone} onChange={e => setAuthPhone(e.target.value)} style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14 }} autoComplete="tel" />
+                  </>
+                )}
                 <input
                   type="email"
                   placeholder="Email Address"
@@ -544,6 +599,7 @@ export default function ChatWidgetEnhanced() {
                   value={authEmail}
                   onChange={e => setAuthEmail(e.target.value)}
                   style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14 }}
+                  autoComplete="email"
                 />
                 <input
                   type="password"
@@ -552,7 +608,14 @@ export default function ChatWidgetEnhanced() {
                   value={authPass}
                   onChange={e => setAuthPass(e.target.value)}
                   style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14 }}
+                  autoComplete={authMode === "register" ? "new-password" : "current-password"}
                 />
+                {authMode === "register" && (
+                  <>
+                    <input type="password" placeholder="Confirm password" required value={authConfirmPass} onChange={e => setAuthConfirmPass(e.target.value)} style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14 }} autoComplete="new-password" />
+                    <input type="text" placeholder="Referral code (optional)" value={authReferralCode} onChange={e => setAuthReferralCode(normalizeReferralCode(e.target.value))} style={{ padding: "12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14 }} autoComplete="off" />
+                  </>
+                )}
                 <button type="submit" disabled={authLoading} style={{ padding: "12px", borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
                   {authLoading ? "Processing..." : (authMode === "login" ? "Log In" : "Create Account")}
                 </button>

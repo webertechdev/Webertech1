@@ -2,12 +2,22 @@
 // WeberTech Control Center v3 - With Upload Progress & Fixed Hanging
 
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, onSnapshot, runTransaction, increment } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, setDoc, deleteDoc, serverTimestamp, onSnapshot, runTransaction, increment } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import { playMessageNotificationSound } from "../utils/chatNotifications";
+
+async function requireAdminAccess() {
+  const signedInUser = auth.currentUser;
+  if (!signedInUser) throw new Error("Administrator sign-in required.");
+  const profileSnap = await getDoc(doc(db, "users", signedInUser.uid));
+  if (!profileSnap.exists() || profileSnap.data()?.role !== "admin") {
+    throw new Error("Administrator permission required.");
+  }
+  return signedInUser;
+}
 
 function withTimeout(promise, timeoutMs, message) {
   return new Promise((resolve, reject) => {
@@ -392,6 +402,8 @@ export default function UnifiedControlCenterV3() {
     totalRevenue: 0,
     activeChats: 0,
     documentsCount: 0,
+    referralUsers: 0,
+    referralEarnings: 0,
   });
   const chatEndRef = useRef(null);
 
@@ -520,12 +532,22 @@ export default function UnifiedControlCenterV3() {
       const totalRevenue = allOrders
         .filter(o => o.status === "paid")
         .reduce((sum, o) => sum + (o.amount || 0), 0);
+      const [referralUsersSnap, referralEarningsSnap] = await Promise.all([
+        getDocs(collection(db, "users")).catch(() => ({ docs: [] })),
+        getDocs(collection(db, "referralEarnings")).catch(() => ({ docs: [] })),
+      ]);
+      const referralUsers = referralUsersSnap.docs.filter(d => d.data()?.referredById).length;
+      const referralEarnings = referralEarningsSnap.docs
+        .filter(d => d.data()?.status === "credited" || !d.data()?.status)
+        .reduce((sum, d) => sum + Number(d.data()?.commissionAmount || 0), 0);
 
       setStats({
         totalOrders: allOrders.length,
         totalRevenue,
         activeChats: activeChatsCount,
         documentsCount: allDocs.length,
+        referralUsers,
+        referralEarnings,
       });
 
       setLastRefresh(new Date().toLocaleTimeString());
@@ -573,6 +595,106 @@ export default function UnifiedControlCenterV3() {
     } catch (err) {
       console.error("Inbox delete error:", err);
       toast.error(`Could not delete record: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // These controls are only rendered inside the authenticated Admin Control Center.
+  // Every operation is scoped to the selected chat and never affects another thread.
+  const handleClearChatMessages = async () => {
+    if (!selectedChat) return;
+    try {
+      await requireAdminAccess();
+    } catch (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (!window.confirm("Clear all messages from this chat? The chat record will remain.")) return;
+    setLoading(true);
+    try {
+      const messagesSnap = await getDocs(collection(db, "chats", selectedChat.id, "messages"));
+      await Promise.all(messagesSnap.docs.map(message => deleteDoc(message.ref)));
+      await setDoc(doc(db, "chats", selectedChat.id), {
+        lastMessage: "",
+        messageCount: 0,
+        unreadForAdmin: false,
+        adminUnreadCount: 0,
+        userUnreadCount: 0,
+        status: "active",
+        resolved: false,
+        clearedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      const cleared = { ...selectedChat, lastMessage: "", messageCount: 0, unreadForAdmin: false, adminUnreadCount: 0, userUnreadCount: 0, status: "active", resolved: false };
+      setChatMessages([]);
+      setSelectedChat(cleared);
+      setChats(prev => prev.map(chat => chat.id === cleared.id ? cleared : chat));
+      toast.success("✅ Chat messages cleared. The chat thread remains available.");
+    } catch (err) {
+      console.error("Chat clear error:", err);
+      toast.error(`Could not clear this chat: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChatStatusChange = async (status) => {
+    if (!selectedChat) return;
+    try {
+      await requireAdminAccess();
+    } catch (error) {
+      toast.error(error.message);
+      return;
+    }
+    const isArchive = status === "archived";
+    const isResolved = status === "resolved";
+    setLoading(true);
+    try {
+      const updates = {
+        status,
+        resolved: isResolved,
+        archived: isArchive,
+        unreadForAdmin: false,
+        adminUnreadCount: 0,
+        adminUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(doc(db, "chats", selectedChat.id), updates, { merge: true });
+      const updated = { ...selectedChat, ...updates, adminUpdatedAt: new Date(), updatedAt: new Date() };
+      setSelectedChat(updated);
+      setChats(prev => prev.map(chat => chat.id === updated.id ? updated : chat));
+      toast.success(isArchive ? "✅ Chat archived." : isResolved ? "✅ Chat marked resolved." : "✅ Chat reopened.");
+    } catch (err) {
+      console.error("Chat status error:", err);
+      toast.error(`Could not update chat status: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteChat = async () => {
+    if (!selectedChat) return;
+    try {
+      await requireAdminAccess();
+    } catch (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (!window.confirm("Permanently delete this chat and every message in it? This cannot be undone.")) return;
+    setLoading(true);
+    try {
+      const chatId = selectedChat.id;
+      const messagesSnap = await getDocs(collection(db, "chats", chatId, "messages"));
+      await Promise.all(messagesSnap.docs.map(message => deleteDoc(message.ref)));
+      await deleteDoc(doc(db, "chats", chatId));
+      setChats(prev => prev.filter(chat => chat.id !== chatId));
+      setSelectedChat(null);
+      setChatMessages([]);
+      toast.success("✅ Chat and its messages were permanently deleted.");
+    } catch (err) {
+      console.error("Chat delete error:", err);
+      toast.error(`Could not delete this chat: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -1092,6 +1214,12 @@ export default function UnifiedControlCenterV3() {
 
   const handleChatModeChange = async (mode) => {
     if (!selectedChat || chatModeSaving) return;
+    try {
+      await requireAdminAccess();
+    } catch (error) {
+      toast.error(error.message);
+      return;
+    }
     setChatModeSaving(true);
     const adminTakeover = mode === "admin";
     try {
@@ -1164,6 +1292,12 @@ export default function UnifiedControlCenterV3() {
   // Send admin reply
   const handleSendReply = async () => {
     if (!adminReply.trim() || !selectedChat) return;
+    try {
+      await requireAdminAccess();
+    } catch (error) {
+      toast.error(error.message);
+      return;
+    }
     setLoading(true);
 
     try {
@@ -1396,6 +1530,14 @@ export default function UnifiedControlCenterV3() {
                 <div className="uc-stat-box">
                   <div className="uc-stat-value">{stats.documentsCount}</div>
                   <div className="uc-stat-label">Documents</div>
+                </div>
+                <div className="uc-stat-box">
+                  <div className="uc-stat-value">{stats.referralUsers}</div>
+                  <div className="uc-stat-label">Referred Users</div>
+                </div>
+                <div className="uc-stat-box">
+                  <div className="uc-stat-value">KES {Number(stats.referralEarnings || 0).toLocaleString()}</div>
+                  <div className="uc-stat-label">Referral Commissions</div>
                 </div>
               </div>
             )}
@@ -1949,6 +2091,13 @@ export default function UnifiedControlCenterV3() {
                           <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>{selectedChat.userEmail || "Anonymous"} · Opened/updated {formatInboxDate(selectedChat.updatedAt || selectedChat.createdAt)} · <span style={{ color: "#4ade80", fontWeight: 700 }}>● Online thread</span></div>
                         </div>
                         <button onClick={() => loadChatMessages(selectedChat)} disabled={refreshingChat} aria-label="Refresh selected chat" style={{ border: "1px solid rgba(74,222,128,0.45)", background: "rgba(22,163,74,0.15)", color: "#86efac", borderRadius: 8, padding: "7px 10px", cursor: refreshingChat ? "wait" : "pointer", fontWeight: 700 }}>{refreshingChat ? "…" : "↻ Refresh"}</button>
+                      </div>
+                      <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", margin: "10px 0 12px", padding: "9px 10px", borderRadius: 9, background: "rgba(15,23,42,0.75)", border: "1px solid rgba(148,163,184,0.18)" }}>
+                        <span style={{ color: "rgba(255,255,255,0.58)", fontSize: 11, fontWeight: 800, marginRight: 2 }}>ADMIN ACTIONS</span>
+                        <button onClick={() => handleChatStatusChange(selectedChat.status === "resolved" || selectedChat.resolved ? "active" : "resolved")} disabled={loading} style={{ border: "1px solid rgba(96,165,250,0.45)", background: "rgba(37,99,235,0.18)", color: "#bfdbfe", borderRadius: 7, padding: "6px 8px", cursor: loading ? "wait" : "pointer", fontSize: 11, fontWeight: 700 }}>{selectedChat.status === "resolved" || selectedChat.resolved ? "↩ Reopen" : "✓ Resolve"}</button>
+                        <button onClick={() => handleChatStatusChange(selectedChat.status === "archived" || selectedChat.archived ? "active" : "archived")} disabled={loading} style={{ border: "1px solid rgba(168,85,247,0.45)", background: "rgba(126,34,206,0.18)", color: "#e9d5ff", borderRadius: 7, padding: "6px 8px", cursor: loading ? "wait" : "pointer", fontSize: 11, fontWeight: 700 }}>{selectedChat.status === "archived" || selectedChat.archived ? "↩ Unarchive" : "▣ Archive"}</button>
+                        <button onClick={handleClearChatMessages} disabled={loading} style={{ border: "1px solid rgba(251,191,36,0.45)", background: "rgba(180,83,9,0.18)", color: "#fde68a", borderRadius: 7, padding: "6px 8px", cursor: loading ? "wait" : "pointer", fontSize: 11, fontWeight: 700 }}>⌫ Clear messages</button>
+                        <button onClick={handleDeleteChat} disabled={loading} style={{ border: "1px solid rgba(248,113,113,0.55)", background: "rgba(185,28,28,0.2)", color: "#fecaca", borderRadius: 7, padding: "6px 8px", cursor: loading ? "wait" : "pointer", fontSize: 11, fontWeight: 700 }}>🗑 Delete chat</button>
                       </div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "12px 0" }}>
                         <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Reply mode:</span>

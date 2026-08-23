@@ -9,6 +9,7 @@ import { auth, db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { loadReferralSnapshot, referralLinkForCode, REFERRAL_COMMISSION_RATE, displayReferralName } from "../utils/referrals";
 
 export default function DashboardV3({ user: initialUser }) {
   const [user, setUser] = useState(initialUser || null);
@@ -24,10 +25,27 @@ export default function DashboardV3({ user: initialUser }) {
   const [wallet, setWallet] = useState({ balance: 0, currency: "KES" });
   const [rewards, setRewards] = useState({ points: 0, tier: "Silver", nextTier: 500 });
   const [referralCode, setReferralCode] = useState("");
-  const [referralStats, setReferralStats] = useState({ referrals: 0, earnings: 0 });
+  const [referralData, setReferralData] = useState({ profile: null, friends: [], earnings: [], totalEarnings: 0, referredRevenue: 0 });
+  const [referralStats, setReferralStats] = useState({ referrals: 0, earnings: 0, referredRevenue: 0, rate: REFERRAL_COMMISSION_RATE });
   const [lastRefresh, setLastRefresh] = useState(null);
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({});
+
+  const refreshReferralData = async (userId) => {
+    if (!userId) return;
+    const snapshot = await loadReferralSnapshot(db, userId);
+    const code = snapshot.profile?.code || `WEB${String(userId).substring(0, 8).toUpperCase()}`;
+    const totalEarnings = Number(snapshot.totalEarnings || snapshot.profile?.totalEarnings || 0);
+    const rate = Number(snapshot.profile?.commissionRate || REFERRAL_COMMISSION_RATE);
+    setReferralCode(code);
+    setReferralData({ ...snapshot, totalEarnings });
+    setReferralStats({
+      referrals: snapshot.friends.length,
+      earnings: totalEarnings,
+      referredRevenue: Number(snapshot.referredRevenue || 0),
+      rate,
+    });
+  };
 
   // Load user auth state
   useEffect(() => {
@@ -47,14 +65,9 @@ export default function DashboardV3({ user: initialUser }) {
         const rewardsSnap = await getDoc(doc(db, "rewards", fu.uid)).catch(() => null);
         if (rewardsSnap?.exists()) setRewards(rewardsSnap.data());
         
-        const referralSnap = await getDoc(doc(db, "referrals", fu.uid)).catch(() => null);
-        if (referralSnap?.exists()) {
-          const ref = referralSnap.data();
-          setReferralCode(ref.code || `WEB${fu.uid.substring(0, 8).toUpperCase()}`);
-          setReferralStats(ref.stats || { referrals: 0, earnings: 0 });
-        } else {
-          setReferralCode(`WEB${fu.uid.substring(0, 8).toUpperCase()}`);
-        }
+        await refreshReferralData(fu.uid).catch(error => {
+          console.warn("Referral data could not load:", error?.message || error);
+        });
       } catch (err) {
         console.error("User fetch error:", err);
         setUser({ uid: fu.uid, email: fu.email });
@@ -115,8 +128,9 @@ export default function DashboardV3({ user: initialUser }) {
       setInvoices(userInvoices);
       setTickets(userTickets);
       setNotifications(userNotifications);
+      await refreshReferralData(user.uid);
       setLastRefresh(new Date().toLocaleTimeString());
-      toast.success("✅ Dashboard updated!");
+      toast.success("✅ Dashboard updated and referral earnings recalculated!");
     } catch (err) {
       console.error("Data refresh error:", err);
       toast.error("⚠️ Some data couldn't load, but dashboard is still working!");
@@ -157,7 +171,7 @@ export default function DashboardV3({ user: initialUser }) {
 
   // Share referral link
   const shareReferralLink = () => {
-    const link = `${window.location.origin}?ref=${referralCode}`;
+    const link = referralLinkForCode(referralCode);
     navigator.clipboard.writeText(link);
     toast.success("✅ Referral link copied!");
   };
@@ -396,33 +410,60 @@ export default function DashboardV3({ user: initialUser }) {
             {/* REFER & EARN */}
             {tab === "referrals" && (
               <div className="dash-card">
-                <h3 style={{ fontWeight: 700, fontSize: 18, marginBottom: 20 }}>🔗 Refer & Earn</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+                  <div>
+                    <h3 style={{ fontWeight: 700, fontSize: 18, margin: 0 }}>🔗 Refer & Earn</h3>
+                    <p style={{ color: "#6b7280", fontSize: 13, margin: "6px 0 0" }}>Invite friends and earn {Math.round(referralStats.rate * 100)}% of every confirmed purchase they make for life.</p>
+                  </div>
+                  <button className="dash-refresh-btn" style={{ background: "#16a34a" }} onClick={refreshData} disabled={loading}>{loading ? "⟳ Recalculating" : "🔄 Refresh earnings"}</button>
+                </div>
                 <div className="referral-box">
                   <div style={{ color: "#15803d", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>YOUR REFERRAL CODE</div>
-                  <div className="referral-code">{referralCode}</div>
+                  <div className="referral-code">{referralCode || "Preparing…"}</div>
+                  <div style={{ color: "#166534", fontSize: 12, marginBottom: 12, wordBreak: "break-all" }}>Link: {referralLinkForCode(referralCode)}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <button className="dash-btn" onClick={copyReferralCode}>📋 Copy Code</button>
-                    <button className="dash-btn" onClick={shareReferralLink}>🔗 Copy Link</button>
+                    <button className="dash-btn" onClick={copyReferralCode} disabled={!referralCode}>📋 Copy Code</button>
+                    <button className="dash-btn" onClick={shareReferralLink} disabled={!referralCode}>🔗 Copy Link</button>
                   </div>
                 </div>
-                <div style={{ background: "#f0fdf4", border: "1px solid #dcfce7", borderRadius: 12, padding: 16, marginBottom: 20 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                    <div>
-                      <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 700 }}>TOTAL REFERRALS</div>
-                      <div style={{ fontSize: 24, fontWeight: 900, color: "#16a34a" }}>{referralStats.referrals}</div>
-                    </div>
-                    <div>
-                      <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 700 }}>EARNINGS</div>
-                      <div style={{ fontSize: 24, fontWeight: 900, color: "#16a34a" }}>KES {referralStats.earnings.toLocaleString()}</div>
-                    </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 20 }}>
+                  <div style={{ background: "#f0fdf4", border: "1px solid #dcfce7", borderRadius: 12, padding: 16 }}>
+                    <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 700 }}>FRIENDS JOINED</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#16a34a" }}>{referralStats.referrals}</div>
+                  </div>
+                  <div style={{ background: "#eff6ff", border: "1px solid #dbeafe", borderRadius: 12, padding: 16 }}>
+                    <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 700 }}>REFERRED REVENUE</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#2563eb" }}>KES {Number(referralStats.referredRevenue || 0).toLocaleString()}</div>
+                  </div>
+                  <div style={{ background: "#fefce8", border: "1px solid #fef08a", borderRadius: 12, padding: 16 }}>
+                    <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 700 }}>LIFETIME EARNINGS</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: "#a16207" }}>KES {Number(referralStats.earnings || 0).toLocaleString()}</div>
                   </div>
                 </div>
-                <h4 style={{ fontWeight: 700, marginBottom: 12 }}>Referral Rewards</h4>
-                <ul style={{ color: "#6b7280", fontSize: 13.5, lineHeight: 1.8, paddingLeft: 20 }}>
-                  <li>KES 500 for each successful referral</li>
-                  <li>Bonus KES 100 when they make first purchase</li>
-                  <li>Unlimited earning potential</li>
-                </ul>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                  <h4 style={{ fontWeight: 700, margin: 0 }}>👥 My Referred Friends ({referralData.friends.length})</h4>
+                  <span style={{ color: "#6b7280", fontSize: 12 }}>Confirmed paid orders earn {Math.round(referralStats.rate * 100)}% automatically.</span>
+                </div>
+                {referralData.friends.length === 0 ? (
+                  <p style={{ color: "#9ca3af", textAlign: "center", padding: "18px 0" }}>No referred friends yet. Share your link to start building your network.</p>
+                ) : (
+                  <div style={{ overflowX: "auto", marginBottom: 18 }}>
+                    <table className="dash-tbl">
+                      <thead><tr><th>Friend</th><th>Email</th><th>Joined</th><th>Status</th></tr></thead>
+                      <tbody>{referralData.friends.map(friend => (
+                        <tr key={friend.id}>
+                          <td style={{ fontWeight: 700 }}>{displayReferralName(friend)}</td>
+                          <td>{friend.email || "—"}</td>
+                          <td style={{ color: "#6b7280", fontSize: 12 }}>{friend.joinedAt?.toDate?.().toLocaleDateString?.() || "—"}</td>
+                          <td><span className="dash-badge badge-active">{friend.status || "active"}</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+                <div style={{ background: "#f9fafb", borderRadius: 10, padding: 12, color: "#6b7280", fontSize: 12, lineHeight: 1.6 }}>
+                  Referral earnings are based on successful confirmed orders, are recorded server-side with duplicate-payment protection, and are recalculated from the ledger when you refresh your dashboard.
+                </div>
               </div>
             )}
 
