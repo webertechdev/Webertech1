@@ -8,6 +8,7 @@ import { Link, useLocation }           from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc }                 from "firebase/firestore";
 import { auth, db }                    from "../config/firebase";
+import UniversalSearch                  from "./UniversalSearch";
 
 const BUNDLES_URL = "https://bundles.webertech.co.ke";
 const WA_URL      = "https://wa.me/254722508904";
@@ -273,6 +274,9 @@ export default function Navbar() {
               <span className="wtn-logo-text">Weber<span>Tech</span></span>
             </div>
           </Link>
+
+          {/* ── Global eCitizen-style search ── */}
+          <UniversalSearch />
 
           {/* ── Desktop nav links ── */}
           <div className="wtn-links">
