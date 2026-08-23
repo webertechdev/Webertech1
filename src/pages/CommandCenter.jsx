@@ -46,13 +46,13 @@ const REQUEST_COLLECTIONS = [
 ];
 
 const VIEWS = [
+  ["requests", "📥", "Inbound requests"],
   ["overview", "▦", "Overview"],
   ["orders", "🧾", "Orders"],
   ["transactions", "💳", "Transactions"],
   ["operations", "🗂️", "Operations"],
   ["users", "👥", "Users"],
   ["chats", "💬", "Support chats"],
-  ["logs", "🛡️", "Logs & reports"],
 ];
 
 function toDate(value) {
@@ -255,6 +255,12 @@ export default function CommandCenter() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [lastRefreshBy, setLastRefreshBy] = useState("");
   const [search, setSearch] = useState("");
+  const [contactModal, setContactModal] = useState(null);
+  const [contactChannel, setContactChannel] = useState("email");
+  const [contactSubject, setContactSubject] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [contactBusy, setContactBusy] = useState(false);
+  const [draftBusy, setDraftBusy] = useState(false);
 
   const refreshData = async () => {
     setLoading(true);
@@ -320,6 +326,75 @@ export default function CommandCenter() {
       toast.error("Some data could not be refreshed.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openRequestComposer = (request, channel = "email") => {
+    const service = request.service || request.productTitle || request.title || "WeberTech service";
+    const name = displayName(request);
+    setContactModal(request);
+    setContactChannel(channel);
+    setContactSubject(`${service} follow-up — WeberTech`);
+    setContactMessage(request.message || request.summary || `Hello ${name}, this is WeberTech following up regarding your ${service}. How can we assist you today?`);
+  };
+
+  const draftRequestMessage = async () => {
+    if (!contactModal) return;
+    setDraftBusy(true);
+    const request = contactModal;
+    const service = request.service || request.productTitle || request.title || "WeberTech service";
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", text: `Draft a warm, concise ${contactChannel === "email" ? "email reply with a subject line" : "WhatsApp follow-up"} for ${displayName(request)} about ${service}. Mention WeberTech Kenya, acknowledge their checkout or enquiry, and invite them to contact AI Support or online chat for help. Return only the message, and for email begin with Subject: followed by the subject and then Message:` }], lang: "en" }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "AI draft failed");
+      const answer = data.answer || data.reply || "";
+      const subject = answer.match(/Subject\\s*:\\s*(.*)/i);
+      const message = answer.match(/Message\\s*:\\s*([\\s\\S]*)/i);
+      if (contactChannel === "email" && subject?.[1]) setContactSubject(subject[1].trim());
+      setContactMessage((message?.[1] || answer).trim());
+      toast.success("AI draft generated. Review and edit it before sending.");
+    } catch (error) {
+      toast.error("AI draft failed. You can still edit the ready message manually.");
+    } finally {
+      setDraftBusy(false);
+    }
+  };
+
+  const sendRequestContact = async () => {
+    if (!contactModal || !contactMessage.trim()) return toast.error("Add a message before sending.");
+    const request = contactModal;
+    const email = request.email || request.customerEmail;
+    const rawPhone = request.phone || request.customerPhone;
+    setContactBusy(true);
+    try {
+      if (contactChannel === "email") {
+        if (!email) throw new Error("No email address is available for this request.");
+        if (!auth.currentUser) throw new Error("Your administrator session has expired. Sign in again.");
+        const token = await auth.currentUser.getIdToken();
+        const response = await fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ recipient: email, subject: contactSubject.trim() || "WeberTech follow-up", message: contactMessage.trim() }) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) throw new Error(result.error || "The email could not be sent.");
+      } else {
+        if (!rawPhone) throw new Error("No phone number is available for this request.");
+        const digits = String(rawPhone).replace(/\\D/g, "");
+        const phone = digits.startsWith("0") ? `254${digits.slice(1)}` : (digits.startsWith("254") ? digits : `254${digits}`);
+        const url = `https://wa.me/${phone}?text=${encodeURIComponent(contactMessage.trim())}`;
+        const opened = window.open(url, "_blank", "noopener,noreferrer");
+        if (!opened) window.location.href = url;
+      }
+      if (request.sourceCollection && request.id) await updateDoc(doc(db, request.sourceCollection, request.id), { status: "contacted", adminUnread: false, contactedAt: serverTimestamp(), contactedBy: auth.currentUser?.uid || "admin" });
+      await writeAdminLog(`${contactChannel}_request_contacted`, request.id, { sourceCollection: request.sourceCollection, recipient: contactChannel === "email" ? email : rawPhone, service: request.service || request.productTitle || request.title });
+      toast.success(contactChannel === "email" ? "Email sent directly and request marked contacted." : "WhatsApp message prepared and request marked contacted.");
+      setContactModal(null);
+      await refreshData();
+    } catch (error) {
+      toast.error(error.message || "The message could not be sent.");
+    } finally {
+      setContactBusy(false);
     }
   };
 
@@ -658,13 +733,22 @@ export default function CommandCenter() {
               </section>
             )}
 
-            {activeView === "logs" && (
+            {activeView === "requests" && (
               <>
-                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Admin read/write audit log ({adminLogs.length})</h2><p className="cmd-card-subtitle">Administrative writes are recorded separately from customer activity. Read this section after refresh.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-admin-audit-logs.csv", adminLogs.map(log => ({ id: log.id, admin: log.adminEmail, action: log.action, target: log.targetId, metadata: log.metadata, timestamp: formatDate(log.timestamp) })))}>⬇ Excel CSV</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>When</th><th>Administrator</th><th>Action</th><th>Target</th><th>Details</th><th>Control</th></tr></thead><tbody>{adminLogs.length ? adminLogs.map(log => <tr key={log.id}><td>{formatDate(log.timestamp)}</td><td>{log.adminEmail || log.adminUid || "—"}</td><td><span className="cmd-badge cmd-badge-paid">{log.action}</span></td><td style={{ fontFamily: "monospace", fontSize: 11 }}>{log.targetId || "—"}</td><td style={{ maxWidth: 260, wordBreak: "break-word" }}>{log.metadata ? JSON.stringify(log.metadata) : "—"}</td><td><button style={{ ...commonButton, color: "#fca5a5", borderColor: "rgba(252,165,165,.25)" }} onClick={() => handleDeleteAdminLog(log)}>Delete</button></td></tr>) : <tr><td colSpan="6"><div className="cmd-empty">No admin audit entries yet. Status changes and other protected writes will appear here.</div></td></tr>}</tbody></table></div></section>
                 <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Customer activity and generated reports</h2><p className="cmd-card-subtitle">Read-only operational history from activities and reports, loaded on refresh.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-activity-report.csv", [...activities.map(activity => ({ source: "activity", id: activity.id, userId: activity.userId, type: activity.type, description: activity.description, timestamp: formatDate(activity.timestamp) })), ...reports.map(report => ({ source: "report", id: report.id, type: report.type || report.title, description: report.message || report.summary, timestamp: formatDate(report.date || report.createdAt) }))])}>⬇ Export logs</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Source</th><th>Record</th><th>Customer / owner</th><th>Description</th><th>When</th></tr></thead><tbody>{[...activities.map(activity => ({ source: "Activity", id: activity.id, owner: activity.userId, description: activity.description || activity.type, date: activity.timestamp })), ...reports.map(report => ({ source: "Report", id: report.id, owner: report.createdBy || "System", description: report.message || report.summary || report.title || "Generated platform report", date: report.date || report.createdAt }))].sort((a, b) => (toDate(b.date)?.getTime() || 0) - (toDate(a.date)?.getTime() || 0)).slice(0, 80).map(record => <tr key={`${record.source}-${record.id}`}><td>{record.source}</td><td style={{ fontFamily: "monospace", fontSize: 11 }}>{record.id}</td><td>{record.owner || "—"}</td><td>{record.description}</td><td>{formatDate(record.date)}</td></tr>)}{!activities.length && !reports.length && <tr><td colSpan="5"><div className="cmd-empty">No activity or report records found.</div></td></tr>}</tbody></table></div></section>
-                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Inbound requests ({allRequests.length}) {unreadPurchaseRequests.length ? <span style={{ color: "#fbbf24" }}>· {unreadPurchaseRequests.length} priority</span> : null}</h2><p className="cmd-card-subtitle">Checkout outcomes, waitlists, and service inquiries across all WeberTech divisions. Priority checkout follow-ups appear first.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-inbound-requests.csv", allRequests.map(request => ({ type: request.requestType, source: request.sourceCollection, name: displayName(request), email: request.email || request.customerEmail, phone: request.phone || request.customerPhone, message: request.message || request.summary, status: request.status, received: formatDate(request.createdAt || request.timestamp) })))}>⬇ Export requests</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Type</th><th>Customer</th><th>Contact</th><th>Message</th><th>Status</th><th>Received</th><th>Contact</th></tr></thead><tbody>{allRequests.slice(0, 100).map(request => <tr key={`${request.sourceCollection}-${request.id}`}><td>{request.requestType}</td><td>{displayName(request)}<div style={{ color: "rgba(255,255,255,.5)", fontSize: 10 }}>{request.service || request.productTitle || ""}</div></td><td>{request.email || request.customerEmail || "—"}<br />{request.phone || request.customerPhone || "—"}</td><td>{request.message || request.summary || "No message supplied"}</td><td><span className={`cmd-badge cmd-badge-${request.priority === "high" ? "pending" : normalizeStatus(request.status || "new")}`}>{request.priority === "high" ? "Priority" : request.status || "New"}</span></td><td>{formatDate(request.createdAt || request.timestamp)}</td><td style={{ whiteSpace: "nowrap" }}>{(request.phone || request.customerPhone) ? <button style={commonButton} onClick={() => { const raw = String(request.phone || request.customerPhone).replace(/\D/g, ""); const phone = raw.startsWith("0") ? `254${raw.slice(1)}` : raw; window.open(`https://wa.me/${phone}?text=${encodeURIComponent(request.message || request.summary || `Hello ${displayName(request)}, WeberTech is following up on your ${request.service || request.productTitle || "service"}.`)}`, "_blank", "noopener,noreferrer"); }}>WhatsApp</button> : null} {(request.email || request.customerEmail) ? <button style={commonButton} onClick={() => { const email = request.email || request.customerEmail; window.location.href = `mailto:${email}?subject=${encodeURIComponent(request.title || "WeberTech follow-up")}&body=${encodeURIComponent(request.message || request.summary || "Hello, WeberTech is following up on your service request.")}`; }}>Email</button> : null}</td></tr>)}{!allRequests.length && <tr><td colSpan="7"><div className="cmd-empty">No inbound requests found.</div></td></tr>}</tbody></table></div></section>
+                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Inbound requests ({allRequests.length}) {unreadPurchaseRequests.length ? <span style={{ color: "#fbbf24" }}>· {unreadPurchaseRequests.length} priority</span> : null}</h2><p className="cmd-card-subtitle">Checkout outcomes, waitlists, and service inquiries across all WeberTech divisions. Priority checkout follow-ups appear first.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-inbound-requests.csv", allRequests.map(request => ({ type: request.requestType, source: request.sourceCollection, name: displayName(request), email: request.email || request.customerEmail, phone: request.phone || request.customerPhone, message: request.message || request.summary, status: request.status, received: formatDate(request.createdAt || request.timestamp) })))}>⬇ Export requests</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Type</th><th>Customer</th><th>Contact</th><th>Message</th><th>Status</th><th>Received</th><th>Contact</th></tr></thead><tbody>{allRequests.slice(0, 100).map(request => <tr key={`${request.sourceCollection}-${request.id}`}><td>{request.requestType}</td><td>{displayName(request)}<div style={{ color: "rgba(255,255,255,.5)", fontSize: 10 }}>{request.service || request.productTitle || ""}</div></td><td>{request.email || request.customerEmail || "—"}<br />{request.phone || request.customerPhone || "—"}</td><td>{request.message || request.summary || "No message supplied"}</td><td><span className={`cmd-badge cmd-badge-${request.priority === "high" ? "pending" : normalizeStatus(request.status || "new")}`}>{request.priority === "high" ? "Priority" : request.status || "New"}</span></td><td>{formatDate(request.createdAt || request.timestamp)}</td><td style={{ whiteSpace: "nowrap", display: "flex", gap: 6, flexWrap: "wrap" }}>{(request.phone || request.customerPhone) ? <button style={commonButton} onClick={() => openRequestComposer(request, "whatsapp")}>WhatsApp</button> : null} {(request.email || request.customerEmail) ? <button style={commonButton} onClick={() => openRequestComposer(request, "email")}>Email</button> : null}</td></tr>)}{!allRequests.length && <tr><td colSpan="7"><div className="cmd-empty">No inbound requests found.</div></td></tr>}</tbody></table></div></section>
               </>
             )}
+            {contactModal && (
+              <div role="dialog" aria-modal="true" className="cmd-card" style={{ position: "fixed", inset: "8% 5% auto", zIndex: 50, maxWidth: 760, margin: "0 auto", boxShadow: "0 24px 80px rgba(0,0,0,.55)" }}>
+                <div className="cmd-card-header"><div><h2 className="cmd-card-title">Contact {displayName(contactModal)}</h2><p className="cmd-card-subtitle">Review, edit, and send a service-specific follow-up.</p></div><button style={commonButton} onClick={() => setContactModal(null)}>Close</button></div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}><button className="cmd-btn" onClick={() => setContactChannel("email")}>Email</button><button className="cmd-btn" onClick={() => setContactChannel("whatsapp")}>WhatsApp</button><button className="cmd-btn" onClick={draftRequestMessage} disabled={draftBusy}>{draftBusy ? "Drafting…" : "🤖 Draft with AI"}</button></div>
+                {contactChannel === "email" && <label>Subject<input className="cmd-search" value={contactSubject} onChange={e => setContactSubject(e.target.value)} style={{ display: "block", width: "100%", margin: "5px 0 10px" }} /></label>}
+                <label>Message<textarea value={contactMessage} onChange={e => setContactMessage(e.target.value)} rows={8} style={{ display: "block", width: "100%", marginTop: 5, padding: 12, borderRadius: 8, background: "#0f172a", color: "#fff" }} /></label>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}><button style={commonButton} onClick={() => setContactModal(null)}>Cancel</button><button className="cmd-btn" onClick={sendRequestContact} disabled={contactBusy}>{contactBusy ? "Sending…" : contactChannel === "email" ? "Send email directly" : "Continue to WhatsApp"}</button></div>
+              </div>
+            )}
+
           </main>
         </div>
       </div>
