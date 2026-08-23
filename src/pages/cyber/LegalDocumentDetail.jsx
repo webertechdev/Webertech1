@@ -92,6 +92,13 @@ export default function LegalDocumentDetail() {
     }
   }, [paymentState.checkoutUrl]);
 
+  useEffect(() => {
+    if (paymentState.step !== "paid" || !showPayment) return undefined;
+    toast.success("Payment confirmed. Your download is ready.");
+    const timer = window.setTimeout(() => setShowPayment(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, [paymentState.step, showPayment]);
+
   const product = useMemo(() => documentData ? {
     ...documentData,
     type: documentData.type || "legal-document",

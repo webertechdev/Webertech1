@@ -7,6 +7,7 @@ export default function PaymentStatus({
   product,
   checking,
   timedOut,
+  status,
   onRefresh,
   onRetry,
   onClose,
@@ -76,12 +77,13 @@ export default function PaymentStatus({
   }
 
   if (step === "failed") {
+    const cancelled = status === "cancelled";
     return (
       <Centered>
-        <div style={{ fontSize: 46, marginBottom: 10 }}>⚠️</div>
-        <h3 style={h3}>Payment didn’t go through</h3>
-        <p style={p}>{message || "Something went wrong. Please try again."}</p>
-        <button onClick={onRetry} style={primaryBtn}>Try Again</button>
+        <div style={{ fontSize: 46, marginBottom: 10 }}>{cancelled ? "↩️" : "⚠️"}</div>
+        <h3 style={h3}>{cancelled ? "Payment cancelled" : "Payment didn’t go through"}</h3>
+        <p style={p}>{message || (cancelled ? "The payment was cancelled and you were not charged." : "Something went wrong. Please try again.")}</p>
+        <button onClick={onRetry} style={primaryBtn}>{cancelled ? "Try Again" : "Try Again"}</button>
       </Centered>
     );
   }

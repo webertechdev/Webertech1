@@ -3,7 +3,22 @@
 //  POST /api/payments/nestlink-webhook
 // ─────────────────────────────────────────────────────────────────
 
-import { markOrderPaid, markOrderFailed } from "../_lib/orders.js";
+import { markOrderPaid, markOrderFailed, markOrderCancelled } from "../_lib/orders.js";
+
+function resultCodeNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : value;
+}
+
+function friendlyNestLinkMessage(code, fallback = "Payment could not be completed.") {
+  const normalized = String(code ?? "").toUpperCase();
+  if (normalized === "1") return "Payment was declined because the M-PESA account has insufficient balance.";
+  if (normalized === "1032") return "Payment was cancelled on the phone. No charge was completed.";
+  if (normalized === "1037") return "M-PESA did not respond in time. You can try the payment again.";
+  if (normalized === "2001") return "The M-PESA PIN was incorrect. Please try again with the correct PIN.";
+  if (normalized === "GV50113") return "The payment details could not be verified. Please check the phone number and try again.";
+  return fallback;
+}
 
 const sendJson = (res, status, data) => {
   res.setHeader("Content-Type", "application/json");
@@ -23,6 +38,7 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
     const { api_key, local_id, paid, result_code, result } = body;
+    const code = resultCodeNumber(result_code ?? result?.result_code);
 
     if (!local_id) {
       console.warn("[NestLink Webhook] Missing local_id:", body);
@@ -35,7 +51,7 @@ export default async function handler(req, res) {
       return sendJson(res, 200, { received: true, note: "auth mismatch" });
     }
 
-    if (paid === true && result_code === 0) {
+    if ((paid === true || String(paid).toLowerCase() === "true") && String(code) === "0") {
       await markOrderPaid(local_id, {
         mpesaRef: result?.ref_code || result?.mpesa_ref || "",
         rawPayload: body,
@@ -43,9 +59,11 @@ export default async function handler(req, res) {
       });
       console.log(`[NestLink Webhook] ✅ Confirmed: ${local_id}`);
     } else {
-      const failReason = result?.msg || `NestLink result_code ${result_code}`;
-      await markOrderFailed(local_id, failReason);
-      console.log(`[NestLink Webhook] ❌ Failed: ${local_id} | Reason: ${failReason}`);
+      const failReason = friendlyNestLinkMessage(code, result?.msg || "Payment was declined by M-PESA.");
+      const options = { resultCode: code };
+      if (String(code) === "1032") await markOrderCancelled(local_id, failReason, options);
+      else await markOrderFailed(local_id, failReason, options);
+      console.log(`[NestLink Webhook] ❌ ${local_id} | Code: ${code} | Reason: ${failReason}`);
     }
 
     return sendJson(res, 200, { received: true });

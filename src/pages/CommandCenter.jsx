@@ -79,9 +79,30 @@ function normalizeStatus(value) {
   return String(value || "unknown").toLowerCase().replace(/\s+/g, "-");
 }
 
-function productModule(order = {}) {
-  const text = `${order.type || ""} ${order.productSlug || ""} ${order.productTitle || ""}`.toLowerCase();
+function productModule(order = {}, catalog = []) {
+  const linkedProduct = catalog.find(product =>
+    String(product.id || product.productId || "") === String(order.productId || "") ||
+    (product.slug && product.slug === order.productSlug) ||
+    (product.title && product.title.toLowerCase() === String(order.productTitle || "").toLowerCase())
+  ) || {};
+  const text = `${order.type || ""} ${order.productSlug || ""} ${order.productTitle || ""} ${order.product || ""} ${linkedProduct.division || ""} ${linkedProduct.category || ""} ${linkedProduct.subcategory || ""} ${linkedProduct.type || ""}`.toLowerCase();
+  if (/cyber|legal-document|legal document|government|kra|ntsa|helb|sha|nssf|ecitizen|immigration|crb|document|printing|scanning/.test(text)) return "cyber";
+  if (/academy|course|training|lesson|forex|crypto/.test(text)) return "academy";
+  if (/electronics|phone|tablet|laptop|tv|accessor|power bank|router/.test(text)) return "electronics";
+  if (/bundle|airtime|minutes|sms|data/.test(text)) return "bundles";
+  if (/dev|website|web app|mobile app|software|system|online store/.test(text)) return "dev";
+  if (/hustle|agpo|reseller|business plan|digital income/.test(text)) return "hustle";
   return MODULES.find(module => text.includes(module.id))?.id || "other";
+}
+
+function mergePaymentRecords(transactions = [], payments = []) {
+  const merged = new Map();
+  [...transactions, ...payments].forEach(record => {
+    const key = record.orderId || record.transactionId || record.mpesaTxn || record.checkoutRequestId || record.id;
+    if (!key) return;
+    merged.set(String(key), { ...merged.get(String(key)), ...record, id: record.id || String(key) });
+  });
+  return Array.from(merged.values()).sort((a, b) => (toDate(b.updatedAt || b.createdAt)?.getTime() || 0) - (toDate(a.updatedAt || a.createdAt)?.getTime() || 0));
 }
 
 function exportCsv(fileName, rows) {
@@ -182,9 +203,10 @@ export default function CommandCenter() {
   const refreshData = async () => {
     setLoading(true);
     try {
-      const [allOrders, allTransactions, allUsers, allChats, allActivities, allAdminLogs, allReports, allDownloads, allServices, allInvoices, allNotifications, allSupportTickets, allReferrals, allReferralEarnings, allProducts, ...requestResults] = await Promise.all([
+      const [allOrders, allTransactions, allPayments, allUsers, allChats, allActivities, allAdminLogs, allReports, allDownloads, allServices, allInvoices, allNotifications, allSupportTickets, allReferrals, allReferralEarnings, allProducts, ...requestResults] = await Promise.all([
         safeCollectionRead("orders", "createdAt"),
         safeCollectionRead("transactions", "createdAt"),
+        safeCollectionRead("payments", "updatedAt"),
         safeCollectionRead("users", "updatedAt"),
         safeCollectionRead("chats", "updatedAt"),
         safeCollectionRead("activities", "timestamp"),
@@ -202,7 +224,8 @@ export default function CommandCenter() {
       ]);
 
       setOrders(allOrders);
-      setTransactions(allTransactions);
+      const paymentLedger = mergePaymentRecords(allTransactions, allPayments);
+      setTransactions(paymentLedger);
       setUsers(allUsers);
       setChats(allChats);
       setActivities(allActivities);
@@ -220,7 +243,7 @@ export default function CommandCenter() {
 
       const moduleStats = {};
       MODULES.forEach(module => {
-        const moduleOrders = allOrders.filter(order => productModule(order) === module.id);
+        const moduleOrders = allOrders.filter(order => productModule(order, allProducts) === module.id);
         moduleStats[module.id] = {
           totalOrders: moduleOrders.length,
           paidOrders: moduleOrders.filter(order => ["paid", "completed", "complete"].includes(normalizeStatus(order.status))).length,
@@ -233,7 +256,7 @@ export default function CommandCenter() {
       setSystemHealth("🟢 All Systems Operational");
       setLastRefresh(new Date());
       setLastRefreshBy(auth.currentUser?.email || auth.currentUser?.uid || "Administrator");
-      void writeAdminLog("read_command_center", "command-center", { collections: ["orders", "transactions", "users", "chats", "activities", "adminLogs", "reports", "downloads", "services", "invoices", "notifications", "supportTickets", "referrals", "referralEarnings", "products"], recordCounts: { orders: allOrders.length, users: allUsers.length, chats: allChats.length } });
+      void writeAdminLog("read_command_center", "command-center", { collections: ["orders", "transactions", "payments", "users", "chats", "activities", "adminLogs", "reports", "downloads", "services", "invoices", "notifications", "supportTickets", "referrals", "referralEarnings", "products"], recordCounts: { orders: allOrders.length, transactions: paymentLedger.length, payments: allPayments.length, users: allUsers.length, chats: allChats.length } });
       toast.success("All Command Center data recalculated.");
     } catch (error) {
       console.error("Refresh error:", error);
@@ -458,15 +481,15 @@ export default function CommandCenter() {
                 </section>
                 <section className="cmd-card">
                   <div className="cmd-card-header"><div><h3 className="cmd-card-title">Recent orders</h3><p className="cmd-card-subtitle">Showing the latest 10 records across all modules.</p></div><button style={commonButton} onClick={() => { setActiveView("orders"); setSearch(""); }}>View all orders</button></div>
-                  <OrderTable rows={orders.slice(0, 10)} onManage={setSelectedOrder} onCustomer={user => { setSelectedUser(user); setActiveView("users"); }} users={users} />
+                  <OrderTable rows={orders.slice(0, 10)} products={products} onManage={setSelectedOrder} onCustomer={user => { setSelectedUser(user); setActiveView("users"); }} users={users} />
                 </section>
               </>
             )}
 
             {activeView === "orders" && (
               <section className="cmd-card">
-                <div className="cmd-card-header"><div><h2 className="cmd-card-title">Orders ledger ({filteredOrders.length})</h2><p className="cmd-card-subtitle">Status, customer, product, module, payment and management history.</p></div><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><input className="cmd-search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search order, customer, product, status" /><button style={commonButton} onClick={() => exportCsv("webertech-orders.csv", filteredOrders.map(order => ({ orderId: order.orderId || order.id, product: order.productTitle, module: productModule(order), amount: amountNumber(order.amount), status: order.status, customer: displayName(order), email: order.customerEmail || order.email, createdAt: formatDate(order.createdAt) })))}>⬇ Excel CSV</button></div></div>
-                <OrderTable rows={filteredOrders} onManage={setSelectedOrder} onCustomer={user => { setSelectedUser(user); setActiveView("users"); }} users={users} />
+                <div className="cmd-card-header"><div><h2 className="cmd-card-title">Orders ledger ({filteredOrders.length})</h2><p className="cmd-card-subtitle">Status, customer, product, module, payment and management history.</p></div><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><input className="cmd-search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search order, customer, product, status" /><button style={commonButton} onClick={() => exportCsv("webertech-orders.csv", filteredOrders.map(order => ({ orderId: order.orderId || order.id, product: order.productTitle, module: productModule(order, products), amount: amountNumber(order.amount), status: order.status, customer: displayName(order), email: order.customerEmail || order.email, createdAt: formatDate(order.createdAt) })))}>⬇ Excel CSV</button></div></div>
+                <OrderTable rows={filteredOrders} products={products} onManage={setSelectedOrder} onCustomer={user => { setSelectedUser(user); setActiveView("users"); }} users={users} />
               </section>
             )}
 
@@ -546,8 +569,8 @@ function SimpleDataTable({ title, rows, columns, exportName }) {
   return <section className="cmd-card"><div className="cmd-card-header"><div><h3 className="cmd-card-title">{title}</h3><p className="cmd-card-subtitle">Loaded on refresh and available as an Excel-compatible CSV.</p></div><button style={commonInlineButton} onClick={() => exportCsv(exportName, rows.map(row => Object.fromEntries(columns.map(column => [column.label, column.render ? column.render(row[column.key], row) : row[column.key]]))))}>⬇ Export</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr>{columns.map(column => <th key={column.key}>{column.label}</th>)}</tr></thead><tbody>{rows.length ? rows.slice(0, 500).map(row => <tr key={row.id || JSON.stringify(row)}>{columns.map(column => <td key={column.key}>{column.render ? column.render(row[column.key], row) : (row[column.key] === null || row[column.key] === undefined || row[column.key] === "" ? "—" : String(row[column.key]))}</td>)}</tr>) : <tr><td colSpan={columns.length}><div className="cmd-empty">No records found. Use Refresh All Data to load current data.</div></td></tr>}</tbody></table></div></section>;
 }
 
-function OrderTable({ rows, onManage, onCustomer, users }) {
-  return <div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Order ID</th><th>Product / module</th><th>Amount</th><th>Status</th><th>Customer</th><th>Created</th><th>Action</th></tr></thead><tbody>{rows.length ? rows.map(order => { const owner = users.find(user => user.uid === order.userId || user.id === order.userId || user.email === order.customerEmail || user.email === order.email); return <tr key={order.id}><td style={{ fontFamily: "monospace", fontSize: 11 }}>{order.orderId || order.id}</td><td><strong>{order.productTitle || order.product || "Unnamed product"}</strong><div style={{ color: "rgba(255,255,255,.45)", fontSize: 10 }}>{productModule(order)}</div></td><td>{money(order.amount)}</td><td><span className={`cmd-badge cmd-badge-${normalizeStatus(order.status)}`}>{order.status || "Unknown"}</span></td><td>{displayName(order)}<div style={{ color: "rgba(255,255,255,.45)", fontSize: 10 }}>{order.customerEmail || order.email || ""}</div></td><td>{formatDate(order.createdAt)}</td><td style={{ whiteSpace: "nowrap" }}><button style={{ background: "rgba(22,163,74,.2)", color: "#86efac", border: "none", borderRadius: 6, padding: "6px 9px", cursor: "pointer", fontSize: 11, fontWeight: 800 }} onClick={() => onManage(order)}>Manage</button>{owner && <button style={{ ...commonInlineButton, marginLeft: 5 }} onClick={() => onCustomer(owner)}>Profile</button>}</td></tr>; }) : <tr><td colSpan="7"><div className="cmd-empty">No orders found. Use Refresh All Data to load the current ledger.</div></td></tr>}</tbody></table></div>;
+function OrderTable({ rows, onManage, onCustomer, users, products = [] }) {
+  return <div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Order ID</th><th>Product / module</th><th>Amount</th><th>Status</th><th>Customer</th><th>Created</th><th>Action</th></tr></thead><tbody>{rows.length ? rows.map(order => { const owner = users.find(user => user.uid === order.userId || user.id === order.userId || user.email === order.customerEmail || user.email === order.email); return <tr key={order.id}><td style={{ fontFamily: "monospace", fontSize: 11 }}>{order.orderId || order.id}</td><td><strong>{order.productTitle || order.product || "Unnamed product"}</strong><div style={{ color: "rgba(255,255,255,.45)", fontSize: 10 }}>{productModule(order, products)}</div></td><td>{money(order.amount)}</td><td><span className={`cmd-badge cmd-badge-${normalizeStatus(order.status)}`}>{order.status || "Unknown"}</span></td><td>{displayName(order)}<div style={{ color: "rgba(255,255,255,.45)", fontSize: 10 }}>{order.customerEmail || order.email || ""}</div></td><td>{formatDate(order.createdAt)}</td><td style={{ whiteSpace: "nowrap" }}><button style={{ background: "rgba(22,163,74,.2)", color: "#86efac", border: "none", borderRadius: 6, padding: "6px 9px", cursor: "pointer", fontSize: 11, fontWeight: 800 }} onClick={() => onManage(order)}>Manage</button>{owner && <button style={{ ...commonInlineButton, marginLeft: 5 }} onClick={() => onCustomer(owner)}>Profile</button>}</td></tr>; }) : <tr><td colSpan="7"><div className="cmd-empty">No orders found. Use Refresh All Data to load the current ledger.</div></td></tr>}</tbody></table></div>;
 }
 
 const commonInlineButton = { background: "rgba(37,99,235,.18)", color: "#93c5fd", border: "1px solid rgba(147,197,253,.22)", borderRadius: 6, padding: "6px 9px", cursor: "pointer", fontSize: 11, fontWeight: 800 };

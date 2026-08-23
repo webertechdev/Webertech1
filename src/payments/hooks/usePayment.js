@@ -6,7 +6,7 @@
 import { useCallback, useRef, useState } from "react";
 import { startNestLinkPayment } from "../services/nestlink";
 import { startIntaSendPayment } from "../services/intasend";
-import { fetchOrderStatusOnce, pollOrderStatus } from "../services/orderStatus";
+import { fetchOrderStatusOnce, friendlyPaymentMessage, normalizePaymentStatus, pollOrderStatus } from "../services/orderStatus";
 
 const initialState = {
   step: "idle",
@@ -16,6 +16,7 @@ const initialState = {
   checkoutUrl: null,
   checking: false,
   timedOut: false,
+  status: "idle",
 };
 
 export function usePayment() {
@@ -31,26 +32,30 @@ export function usePayment() {
 
   const applyStatus = useCallback((data) => {
     if (!data) return;
+    const status = normalizePaymentStatus(data.status);
+    const normalizedData = { ...data, status };
 
-    if (data.status === "paid") {
+    if (status === "paid") {
       setState((s) => ({
         ...s,
         step: "paid",
+        status: "paid",
         checking: false,
         timedOut: false,
-        message: "Payment confirmed!",
+        message: data.message || "Payment confirmed successfully. Your order is now being prepared.",
       }));
       stopWatching();
       return;
     }
 
-    if (data.status === "failed" || data.status === "cancelled") {
+    if (status === "failed" || status === "cancelled") {
       setState((s) => ({
         ...s,
         step: "failed",
+        status,
         checking: false,
         timedOut: false,
-        message: data.failReason || data.message || "Payment failed. Please try again.",
+        message: friendlyPaymentMessage(normalizedData),
       }));
       stopWatching();
       return;
@@ -59,9 +64,10 @@ export function usePayment() {
     setState((s) => ({
       ...s,
       step: "awaiting",
+      status: "pending",
       checking: false,
       timedOut: Boolean(data.timedOut),
-      message: data.message || "Payment is still pending. Complete the M-PESA prompt, then check again.",
+      message: data.message || "M-PESA prompt is still awaiting confirmation. Complete it on your phone, then check again.",
     }));
   }, [stopWatching]);
 
@@ -86,7 +92,7 @@ export function usePayment() {
     try {
       const data = await fetchOrderStatusOnce(state.orderId);
       applyStatus(data);
-      if (data.status === "pending") {
+      if (normalizePaymentStatus(data.status) === "pending") {
         cleanupRef.current = pollOrderStatus(state.orderId, applyStatus);
       }
     } catch (error) {

@@ -4,6 +4,24 @@
 // one intentional bounded retry loop because NestLink confirms payment
 // asynchronously through its webhook.
 
+export function normalizePaymentStatus(value) {
+  const status = String(value || "pending").toLowerCase().replace(/[\s_-]+/g, "");
+  if (["paid", "completed", "complete", "success", "successful"].includes(status)) return "paid";
+  if (["cancelled", "canceled", "usercancelled"].includes(status)) return "cancelled";
+  if (["failed", "fail", "declined", "rejected", "error"].includes(status)) return "failed";
+  return "pending";
+}
+
+export function friendlyPaymentMessage(data = {}) {
+  const code = String(data.resultCode ?? data.result_code ?? "").toUpperCase();
+  if (code === "1") return "Payment was declined because the M-PESA account has insufficient balance.";
+  if (code === "1032") return "Payment was cancelled on the phone. No charge was completed.";
+  if (code === "1037") return "M-PESA did not respond in time. You can try the payment again.";
+  if (code === "2001") return "The M-PESA PIN was incorrect. Please try again with the correct PIN.";
+  if (code === "GV50113") return "The payment details could not be verified. Please check the phone number and try again.";
+  return data.message || data.failReason || data.error || "Payment could not be completed.";
+}
+
 export async function fetchOrderStatusOnce(orderId) {
   if (!orderId) throw new Error("Payment order is missing");
 
@@ -31,7 +49,7 @@ export async function fetchOrderStatusOnce(orderId) {
  * Returns a cleanup function. The UI also exposes fetchOrderStatusOnce as a
  * manual "Check payment status" action.
  */
-export function pollOrderStatus(orderId, onUpdate, intervalMs = 4000) {
+export function pollOrderStatus(orderId, onUpdate, intervalMs = 7000) {
   let stopped = false;
   let timer = null;
   let attempts = 0;
@@ -48,13 +66,14 @@ export function pollOrderStatus(orderId, onUpdate, intervalMs = 4000) {
     try {
       const data = await fetchOrderStatusOnce(orderId);
       if (stopped) return;
-      onUpdate(data);
+      const normalized = { ...data, status: normalizePaymentStatus(data.status) };
+      onUpdate(normalized);
 
-      if (data.status === "pending" && attempts < maxAttempts) {
+      if (normalized.status === "pending" && attempts < maxAttempts) {
         schedule();
-      } else if (data.status === "pending" && attempts >= maxAttempts) {
+      } else if (normalized.status === "pending" && attempts >= maxAttempts) {
         onUpdate({
-          ...data,
+          ...normalized,
           timedOut: true,
           message: "Payment is still pending. Tap Check payment status after completing the M-PESA prompt.",
         });

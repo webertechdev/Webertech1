@@ -112,13 +112,67 @@ export async function attachProviderRef(orderId, providerRef) {
   });
 }
 
-export async function markOrderFailed(orderId, reason = "") {
+async function writePaymentLedger(db, order, { status, mpesaRef = "", resultCode = null, failReason = "" } = {}) {
+  if (!order?.orderId) return;
+  const record = {
+    orderId: order.orderId,
+    customerId: order.customerId || null,
+    customerName: order.customerName || "",
+    customerEmail: order.customerEmail || "",
+    customerPhone: order.customerPhone || "",
+    productId: order.productId || "",
+    productSlug: order.productSlug || "",
+    productTitle: order.productTitle || "",
+    type: order.type || "",
+    method: order.paymentMethod || "",
+    status,
+    amount: amountAsNumber(order.amount),
+    currency: order.currency || "KES",
+    mpesaRef,
+    resultCode,
+    failReason,
+    updatedAt: serverTimestamp(),
+  };
+
+  // Keep both ledgers synchronized. `payments` is the canonical current flow;
+  // `transactions` preserves compatibility with the legacy dashboard/data.
+  await db.collection("payments").doc(order.orderId).set({ ...record, createdAt: order.createdAt || serverTimestamp() }, { merge: true });
+  await db.collection("transactions").doc(order.orderId).set({ ...record, transactionId: order.orderId, createdAt: order.createdAt || serverTimestamp() }, { merge: true });
+}
+
+export async function markOrderFailed(orderId, reason = "", options = {}) {
   const db = getDb();
-  await db.collection("orders").doc(orderId).update({
+  const orderRef = db.collection("orders").doc(orderId);
+  const snap = await orderRef.get();
+  if (!snap.exists) return null;
+  const order = snap.data();
+  if (["paid", "completed"].includes(String(order.status || "").toLowerCase())) return { ...order, orderId, status: "paid" };
+  const failReason = reason || "Payment could not be completed.";
+  await orderRef.update({
     status: "failed",
-    failReason: reason,
+    failReason,
+    resultCode: options.resultCode ?? null,
     updatedAt: serverTimestamp(),
   });
+  await writePaymentLedger(db, { ...order, orderId }, { status: "failed", resultCode: options.resultCode ?? null, failReason });
+  return { ...order, orderId, status: "failed", failReason };
+}
+
+export async function markOrderCancelled(orderId, reason = "Payment was cancelled.", options = {}) {
+  const db = getDb();
+  const orderRef = db.collection("orders").doc(orderId);
+  const snap = await orderRef.get();
+  if (!snap.exists) return null;
+  const order = snap.data();
+  if (["paid", "completed"].includes(String(order.status || "").toLowerCase())) return { ...order, orderId, status: "paid" };
+  await orderRef.update({
+    status: "cancelled",
+    failReason: reason,
+    resultCode: options.resultCode ?? 1032,
+    updatedAt: serverTimestamp(),
+  });
+  await writePaymentLedger(db, { ...order, orderId }, { status: "cancelled", resultCode: options.resultCode ?? 1032, failReason: reason });
+  return { ...order, orderId, status: "cancelled", failReason: reason };
 }
 
 // Called only from webhooks (provider-confirmed payment). Idempotent —
@@ -131,7 +185,11 @@ export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, m
   if (!snap.exists) return null;
   const order = snap.data();
 
-  if (order.status === "paid") return order; // already processed, no duplicate side-effects
+  if (order.status === "paid") {
+    // Backfill both dashboard ledgers without repeating fulfillment or referrals.
+    await writePaymentLedger(db, { ...order, orderId, paymentMethod: method || order.paymentMethod }, { status: "paid", mpesaRef: mpesaRef || order.mpesaRef || "" });
+    return order;
+  }
 
   await orderRef.update({
     status: "paid",
@@ -139,17 +197,8 @@ export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, m
     updatedAt: serverTimestamp(),
   });
 
-  await db.collection("payments").add({
-    orderId,
-    method: method || order.paymentMethod,
-    status: "paid",
-    amount: order.amount,
-    currency: order.currency,
-    phone: order.customerPhone,
-    mpesaRef,
-    rawPayload,
-    createdAt: serverTimestamp(),
-  });
+  await writePaymentLedger(db, { ...order, paymentMethod: method || order.paymentMethod }, { status: "paid", mpesaRef });
+  await db.collection("payments").doc(orderId).set({ rawPayload }, { merge: true });
 
   // Product delivery / fulfillment branch
   if (order.type === "document") {
