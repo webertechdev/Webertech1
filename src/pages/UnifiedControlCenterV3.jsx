@@ -449,6 +449,27 @@ export default function UnifiedControlCenterV3() {
       setDocuments(allDocs);
       console.log("✅ Documents loaded:", allDocs.length);
 
+      // Load the saved AI configuration before filtering chats. This ensures
+      // the persisted retention policy is applied on the first refresh.
+      let loadedChatRetention = chatRetention;
+      try {
+        const aiSnap = await withTimeout(
+          getDocs(collection(db, "config")),
+          15000,
+          "Loading AI settings timed out."
+        );
+        const aiConfig = aiSnap.docs.find(d => d.id === "weberai");
+        if (aiConfig?.exists()) {
+          const configData = aiConfig.data();
+          loadedChatRetention = configData.chatRetention || loadedChatRetention;
+          setAiTraining(prev => ({ ...prev, ...configData }));
+          if (configData.chatRetention) setChatRetention(configData.chatRetention);
+          console.log("✅ AI config loaded");
+        }
+      } catch (err) {
+        console.warn("AI config not found");
+      }
+
       // Load the complete chat history. Retention only controls what is shown;
       // no chat or message is deleted automatically.
       const chatsSnap = await withTimeout(
@@ -461,7 +482,7 @@ export default function UnifiedControlCenterV3() {
         month: 30 * 24 * 60 * 60 * 1000,
         quarter: 90 * 24 * 60 * 60 * 1000,
         year: 365 * 24 * 60 * 60 * 1000,
-      }[chatRetention];
+      }[loadedChatRetention];
       const cutoff = retentionMs ? Date.now() - retentionMs : 0;
       const allChats = chatsSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
@@ -495,24 +516,6 @@ export default function UnifiedControlCenterV3() {
       const totalRevenue = allOrders
         .filter(o => o.status === "paid")
         .reduce((sum, o) => sum + (o.amount || 0), 0);
-
-      // Load AI training config
-      try {
-        const aiSnap = await withTimeout(
-          getDocs(collection(db, "config")),
-          15000,
-          "Loading AI settings timed out."
-        );
-        const aiConfig = aiSnap.docs.find(d => d.id === "weberai");
-        if (aiConfig?.exists()) {
-          const configData = aiConfig.data();
-          setAiTraining(prev => ({ ...prev, ...configData }));
-          if (configData.chatRetention) setChatRetention(configData.chatRetention);
-          console.log("✅ AI config loaded");
-        }
-      } catch (err) {
-        console.warn("AI config not found");
-      }
 
       setStats({
         totalOrders: allOrders.length,
