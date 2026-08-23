@@ -1,5 +1,35 @@
 // api/chat.js
-// Gemini AI replacement (Google Generative AI)
+// WeberAI chat endpoint with live admin-managed training context.
+
+import { getDb } from "./_lib/firebaseAdmin.js";
+
+function cleanText(value, max = 12000) {
+  return String(value || "").trim().slice(0, max);
+}
+
+async function loadTrainingConfig() {
+  try {
+    const snapshot = await getDb().collection("config").doc("weberai").get();
+    return snapshot.exists ? snapshot.data() || {} : {};
+  } catch (error) {
+    console.warn("[WeberAI] Training config unavailable; using defaults:", error.message);
+    return {};
+  }
+}
+
+function correctionContext(corrections) {
+  if (!Array.isArray(corrections)) return "";
+  return corrections
+    .filter(item => item && item.question && item.correctedAnswer)
+    .slice(-40)
+    .map((item, index) => [
+      `Correction ${index + 1}:`,
+      `Customer question: ${cleanText(item.question, 1200)}`,
+      `Previous answer to avoid: ${cleanText(item.previousAnswer, 1800) || "Not recorded"}`,
+      `Preferred answer: ${cleanText(item.correctedAnswer, 2200)}`,
+    ].join("\n"))
+    .join("\n\n");
+}
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -21,7 +51,15 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Missing Gemini API key" });
     }
 
-    // System prompt for WeberAI
+    const training = await loadTrainingConfig();
+    const personality = cleanText(training.personality) || "Professional and helpful";
+    const language = cleanText(training.language) || "English & Swahili";
+    const tone = cleanText(training.tone) || "Friendly but formal";
+    const responseStyle = cleanText(training.responseStyle) || "Concise and clear";
+    const knowledgeBase = cleanText(training.knowledgeBase, 18000);
+    const behaviorRules = cleanText(training.behaviorRules, 10000) || "Always provide direct service links. Never generate PDFs unless explicitly requested.";
+    const corrections = correctionContext(training.learnedCorrections);
+
     const systemPrompt = `
 You are WeberAI, the intelligent assistant for WeberTech Solutions KE (webertech.co.ke).
 You are friendly, conversational, and act as a professional guide to all WeberTech digital services.
@@ -43,70 +81,63 @@ LIVE SERVICE ROUTES:
 
 SERVICE KNOWLEDGE:
 1. SAFARICOM BUNDLES: Instant Safaricom data, airtime, and minutes via M-PESA.
-2. CYBER DIVISION: KRA PIN, NTSA, HELB, eCitizen, Passport assistance, Business registration, Printing, and Legal Documents (Car Sale, Rental Agreements, etc.).
-3. ACADEMY: Professional courses in Web Dev, Trading, Design, and Digital Marketing.
+2. CYBER DIVISION: KRA PIN, NTSA, HELB, eCitizen, Passport assistance, Business registration, Printing, and Legal Documents (Car Sale, Rental Agreements, and similar documents).
+3. ACADEMY: Professional courses in Web Development, Trading, Design, and Digital Marketing.
 4. ELECTRONICS: Genuine smartphones, TVs, and appliances with delivery across Kenya.
 5. DEV: Custom websites, e-commerce, mobile apps, and branding.
 6. HUSTLE KE: Affiliate programs and reseller opportunities.
 
-TONE & BEHAVIOR:
-- BE CONVERSATIONAL: Don't just dump links. Acknowledge the user's need first.
-- SMART ROUTING: If they ask about "business registration", talk about the Cyber Division business services and provide the link /cyber/business.
-- DIRECT LINKS: Use Markdown links like [Business Registration](/cyber/business).
-- NEXT STEPS: Always give a clear "Next Step" (e.g., "Click the link, select your service, and we'll handle the rest").
-- MULTILINGUAL: Support both English and Swahili naturally.
-- SCOPE: Focus on WeberTech. If asked unrelated things, politely steer back to WeberTech services or provide the WhatsApp link for custom support.
+ADMIN-MANAGED AI PROFILE:
+Personality: ${personality}
+Language: ${language}
+Tone: ${tone}
+Response style: ${responseStyle}
+Behavior rules: ${behaviorRules}
+${knowledgeBase ? `\nADMIN KNOWLEDGE BASE:\n${knowledgeBase}` : ""}
+${corrections ? `\nVERIFIED ADMIN CORRECTIONS — FOLLOW THESE WHEN RELEVANT:\n${corrections}` : ""}
+
+CORE RESPONSE RULES:
+- Acknowledge the customer's need before giving instructions or links.
+- Use Markdown links such as [Business Registration](/cyber/business).
+- Give a clear next step.
+- Support English and Swahili naturally.
+- Focus on WeberTech. For unrelated requests, politely steer back to WeberTech or provide WhatsApp support.
+- Treat the verified admin corrections above as the preferred answer for matching questions. Do not repeat an answer that the correction explicitly replaces.
 
 EXPLICIT PDF REQUEST ONLY:
-If the user explicitly asks for a PDF after you've explained the service, you can use: [GENERATE_PDF: TYPE | CONTENT].
-Otherwise, prefer direct service links.
+If the customer explicitly asks for a PDF after you have explained the service, you may use [GENERATE_PDF: TYPE | CONTENT]. Otherwise provide the direct service link and instructions; do not generate a PDF automatically.
 `;
 
-    // Build conversation
     const prompt = [
       systemPrompt,
-      ...messages.slice(-10).map(m => `${m.role}: ${m.text}`)
+      `Preferred conversation language: ${cleanText(lang, 40) || language}`,
+      ...messages.slice(-12).map(message => {
+        const role = message?.role === "ai" || message?.role === "assistant" ? "assistant" : "customer";
+        return `${role}: ${cleanText(message?.text || message?.content, 5000)}`;
+      }),
     ].join("\n");
 
-   // GEMINI API CALL (Using gemini-2.5-flash-preview)
-const response = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            {
-              text: prompt
-            }
-          ]
-        }
-      ]
-    })
-  }
-);
-
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      }
+    );
 
     const data = await response.json();
-
-    console.log("Gemini response:", JSON.stringify(data, null, 2));
     if (!response.ok) {
       console.error("Gemini error:", data);
       return res.status(500).json({ error: "AI service error" });
     }
 
-    const answer =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Sorry, no response generated.";
-
+    const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, no response generated.";
     return res.status(200).json({ answer });
-
-  } catch (err) {
-    console.error("API ERROR:", err);
+  } catch (error) {
+    console.error("WeberAI API error:", error);
     return res.status(500).json({ error: "Server error" });
   }
 }
