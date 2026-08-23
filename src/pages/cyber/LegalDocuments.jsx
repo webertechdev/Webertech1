@@ -14,17 +14,22 @@ const slugify = (value = "") => String(value)
   .replace(/^-+|-+$/g, "");
 
 const normalizeDocument = (record, id) => {
+  const resolvedId = id || record.id || slugify(record.title);
   const category = String(record.category || record.division || "cyber").toLowerCase();
   const subcategory = String(record.subcategory || record.documentCategory || "").toLowerCase();
   const isCyberDocument = category.includes("cyber") || category.includes("legal") || record.type === "legal-document" || record.division === "cyber";
+  const sourceUrl = record.fileUrl || record.downloadURL || record.downloadFile || record.documentUrl || record.url || "";
+  const { fileUrl, downloadURL, downloadFile, documentUrl, url, ...safeRecord } = record;
   return {
-    id: id || record.id || slugify(record.title),
-    ...record,
-    slug: record.slug || id || slugify(record.title),
+    id: resolvedId,
+    ...safeRecord,
+    slug: record.slug || resolvedId || slugify(record.title),
     category,
     subcategory,
     type: record.type || (isCyberDocument ? "legal-document" : "service"),
     published: record.published !== false,
+    previewUrl: record.previewUrl || (sourceUrl ? `/api/document-preview?productId=${encodeURIComponent(resolvedId)}` : ""),
+    hasDocument: Boolean(record.hasDocument || sourceUrl),
   };
 };
 
@@ -163,7 +168,7 @@ export default function LegalDocuments() {
                     <div style={{ fontSize: 32, marginBottom: 16 }}>{document.icon || "📄"}</div>
                     <h3 style={{ fontSize: 20, fontWeight: 800, color: "#111827", marginBottom: 8 }}>{document.title}</h3>
                     <p style={{ fontSize: 14, color: "#6b7280", lineHeight: 1.6, marginBottom: 14 }}>{document.description || "Ready-to-use WeberTech digital document."}</p>
-                    {document.fileUrl ? <span style={{ color: "#16a34a", fontSize: 12, fontWeight: 800 }}>◉ Watermarked preview available</span> : <span style={{ color: "#9ca3af", fontSize: 12 }}>Preview coming soon</span>}
+                    {document.previewUrl ? <span style={{ color: "#16a34a", fontSize: 12, fontWeight: 800 }}>◉ Watermarked preview available</span> : <span style={{ color: "#9ca3af", fontSize: 12 }}>Preview coming soon</span>}
                   </div>
                   <div className="ld-footer">
                     <div style={{ fontWeight: 800, color: "#111827" }}>KES {Number(document.price || 0).toLocaleString()}</div>

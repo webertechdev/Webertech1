@@ -17,13 +17,20 @@ const toFeatures = (value) => {
   return String(value || "").split(",").map(item => item.trim()).filter(Boolean);
 };
 
-const normalize = (record, id) => ({
-  id: id || record.id,
-  ...record,
-  slug: record.slug || id || String(record.title || "document").toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-  features: toFeatures(record.features),
-  published: record.published !== false,
-});
+const normalize = (record, id) => {
+  const resolvedId = id || record.id;
+  const sourceUrl = record.fileUrl || record.downloadURL || record.downloadFile || record.documentUrl || record.url || "";
+  const { fileUrl, downloadURL, downloadFile, documentUrl, url, ...safeRecord } = record;
+  return {
+    id: resolvedId,
+    ...safeRecord,
+    slug: record.slug || resolvedId || String(record.title || "document").toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    features: toFeatures(record.features),
+    published: record.published !== false,
+    previewUrl: record.previewUrl || (sourceUrl ? `/api/document-preview?productId=${encodeURIComponent(resolvedId)}` : ""),
+    hasDocument: Boolean(record.hasDocument || sourceUrl),
+  };
+};
 
 async function findDocument(identifier) {
   // Always prefer a live admin-uploaded product. Seed records are only a
@@ -123,8 +130,11 @@ export default function LegalDocumentDetail() {
     return <><Navbar /><div style={{ paddingTop: 120, textAlign: "center", minHeight: "60vh" }}><h2 style={{ fontWeight: 900 }}>Document Not Found</h2><p style={{ color: "#6b7280" }}>The document is unavailable or has not been published.</p><Link to="/cyber/legal-documents" style={{ color: "#16a34a", fontWeight: 700 }}>← Back to Hub</Link></div><Footer /></>;
   }
 
-  const fileUrl = product.fileUrl || product.downloadURL || product.downloadFile || product.documentUrl || product.url || "";
+  const previewUrl = product.previewUrl || "";
   const paid = paymentState.step === "paid";
+  const downloadUrl = paid && paymentState.orderId
+    ? `/api/document-download?orderId=${encodeURIComponent(paymentState.orderId)}&productId=${encodeURIComponent(product.id)}`
+    : "";
   const busy = paymentState.step === "starting" || paymentState.step === "awaiting";
 
   return (
@@ -141,7 +151,7 @@ export default function LegalDocumentDetail() {
                 <h1 style={{ fontSize: 32, fontWeight: 900, color: "#111827", marginBottom: 16 }}>{product.title}</h1>
                 <p style={{ fontSize: 18, color: "#4b5563", lineHeight: 1.6, marginBottom: 32 }}>{product.description || "Ready-to-use WeberTech document."}</p>
                 {product.features.length > 0 && <><h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Features</h3><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 32 }}>{product.features.map((feature, index) => <div key={`${feature}-${index}`} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#4b5563" }}><span style={{ color: "#16a34a" }}>✓</span>{feature}</div>)}</div></>}
-                <div><h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Watermarked Preview</h3><DocumentPreview fileUrl={fileUrl} fileName={product.fileName || `${product.title}.pdf`} title={product.title} description={product.description} features={product.features} watermark /><p style={{ fontSize: 12, color: "#9ca3af", marginTop: 12, textAlign: "center" }}>Preview contains a <b>webertech.co.ke</b> watermark. The original file is available after payment.</p></div>
+                <div><h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Watermarked Preview</h3><DocumentPreview fileUrl={previewUrl} fileName={product.fileName || `${product.title}.pdf`} title={product.title} description={product.description} features={product.features} watermark /><p style={{ fontSize: 12, color: "#9ca3af", marginTop: 12, textAlign: "center" }}>Preview contains a <b>webertech.co.ke</b> watermark. The original file is available after payment.</p></div>
               </div>
             </div>
             <div style={{ position: "sticky", top: 100 }}>
@@ -149,9 +159,9 @@ export default function LegalDocumentDetail() {
                 <div style={{ fontSize: 14, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Price</div>
                 <div style={{ fontSize: 42, fontWeight: 900, color: "#111827", marginBottom: 8 }}>KES {product.price.toLocaleString()}</div>
                 <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 24 }}>One-time payment for lifetime access</div>
-                {paid ? <div style={{ padding: 18, borderRadius: 12, background: "#dcfce7", color: "#166534" }}><strong>Payment confirmed.</strong><p style={{ margin: "8px 0 14px", fontSize: 13 }}>Your document is ready to download.</p>{fileUrl && <a href={fileUrl} download={product.fileName || product.title} target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center", padding: "12px 14px", background: "#16a34a", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 800 }}>⬇ Download original file</a>}</div> : <button onClick={() => { setShowPayment(true); toast("🔒 WeberPay initializing", { icon: "💳" }); }} style={{ width: "100%", padding: "16px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 12, fontSize: 18, fontWeight: 800, cursor: "pointer", marginBottom: 16 }}>Buy & Download Now</button>}
+                {paid ? <div style={{ padding: 18, borderRadius: 12, background: "#dcfce7", color: "#166534" }}><strong>Payment confirmed.</strong><p style={{ margin: "8px 0 14px", fontSize: 13 }}>Your original PDF is ready. WeberTech delivers it through a paid order link.</p>{downloadUrl ? <a href={downloadUrl} download={product.fileName || product.title} style={{ display: "block", textAlign: "center", padding: "12px 14px", background: "#16a34a", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 800 }}>⬇ Download original PDF</a> : <p style={{ margin: 0, fontSize: 13 }}>Your download link is being prepared. Refresh this page once.</p>}</div> : <button onClick={() => { setShowPayment(true); toast("🔒 WeberPay initializing", { icon: "💳" }); }} style={{ width: "100%", padding: "16px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 12, fontSize: 18, fontWeight: 800, cursor: "pointer", marginBottom: 16 }}>Buy & Download Now</button>}
                 <div style={{ textAlign: "center", fontSize: 12, color: "#9ca3af" }}>Secured by <b>WeberPay</b> · NestLink & IntaSend</div>
-                <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1.5px solid #f3f4f6" }}><h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>What's Included:</h4><ul style={{ padding: 0, margin: 0, listStyle: "none", display: "grid", gap: 10 }}><li style={{ fontSize: 13, color: "#4b5563" }}>📎 Original uploaded file</li><li style={{ fontSize: 13, color: "#4b5563" }}>📎 Watermarked preview before payment</li><li style={{ fontSize: 13, color: "#4b5563" }}>⚡ Download after payment confirmation</li></ul></div>
+                <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1.5px solid #f3f4f6" }}><h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>What's Included:</h4><ul style={{ padding: 0, margin: 0, listStyle: "none", display: "grid", gap: 10 }}><li style={{ fontSize: 13, color: "#4b5563" }}>📎 Original public PDF delivered after payment</li><li style={{ fontSize: 13, color: "#4b5563" }}>📎 Watermarked preview before payment</li><li style={{ fontSize: 13, color: "#4b5563" }}>⚡ Download after payment confirmation</li></ul></div>
               </div>
             </div>
           </div>
