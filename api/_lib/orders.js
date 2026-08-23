@@ -25,6 +25,14 @@ function amountAsNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+export function isDocumentOrderType(value) {
+  return ["document", "legal-document", "service-document"].includes(String(value || "").toLowerCase());
+}
+
+function normalizeOrderType(value) {
+  return isDocumentOrderType(value) ? "document" : (value || "document");
+}
+
 async function creditReferralCommission(db, order) {
   const buyerId = order.customerId;
   const amount = amountAsNumber(order.amount);
@@ -92,7 +100,7 @@ export async function createPendingOrder({
     productId,
     productSlug,
     productTitle,
-    type,
+    type: normalizeOrderType(type),
     amount,
     currency,
     paymentMethod,
@@ -185,10 +193,14 @@ export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, m
   if (!snap.exists) return null;
   const order = snap.data();
 
-  if (order.status === "paid") {
+  if (["paid", "completed", "complete"].includes(String(order.status || "").toLowerCase())) {
     // Backfill both dashboard ledgers without repeating fulfillment or referrals.
-    await writePaymentLedger(db, { ...order, orderId, paymentMethod: method || order.paymentMethod }, { status: "paid", mpesaRef: mpesaRef || order.mpesaRef || "" });
-    return order;
+    const confirmedRef = mpesaRef || order.mpesaRef || "";
+    if (confirmedRef && confirmedRef !== order.mpesaRef) {
+      await orderRef.update({ mpesaRef: confirmedRef, updatedAt: serverTimestamp() });
+    }
+    await writePaymentLedger(db, { ...order, orderId, paymentMethod: method || order.paymentMethod, mpesaRef: confirmedRef }, { status: "paid", mpesaRef: confirmedRef });
+    return { ...order, orderId, status: "paid", mpesaRef: confirmedRef };
   }
 
   await orderRef.update({
@@ -201,7 +213,7 @@ export async function markOrderPaid(orderId, { mpesaRef = "", rawPayload = {}, m
   await db.collection("payments").doc(orderId).set({ rawPayload }, { merge: true });
 
   // Product delivery / fulfillment branch
-  if (order.type === "document") {
+  if (isDocumentOrderType(order.type)) {
     await db.collection("downloads").add({
       orderId,
       customerId: order.customerId,

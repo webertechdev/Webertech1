@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { getDb } from "./_lib/firebaseAdmin.js";
 import { fetchRemotePdf, getDocumentSource, getFileName } from "./_lib/documentLinks.js";
+import { isDocumentOrderType } from "./_lib/orders.js";
 
 const require = createRequire(import.meta.url);
 
@@ -169,7 +170,7 @@ async function handleDownload(req, res) {
     if (!orderSnapshot.exists) return res.status(404).json({ error: "Payment order not found." });
 
     const order = orderSnapshot.data();
-    if (order.status !== "paid" || order.type !== "document" || String(order.productId) !== String(productId)) {
+    if (String(order.status || "").toLowerCase() !== "paid" || !isDocumentOrderType(order.type) || String(order.productId) !== String(productId)) {
       return res.status(403).json({ error: "Payment must be confirmed before downloading this document." });
     }
 

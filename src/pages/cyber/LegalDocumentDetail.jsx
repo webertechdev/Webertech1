@@ -65,12 +65,44 @@ async function findDocument(identifier) {
   return null;
 }
 
+async function findPaidEntitlement(productId, userId) {
+  if (!productId || !userId) return null;
+  try {
+    const [ordersSnapshot, downloadsSnapshot] = await Promise.all([
+      getDocs(collection(db, "orders")),
+      getDocs(collection(db, "downloads")),
+    ]);
+    const paidOrders = ordersSnapshot.docs
+      .map(item => ({ id: item.id, ...item.data() }))
+      .filter(order => order.customerId === userId
+        && String(order.productId) === String(productId)
+        && ["paid", "completed", "complete"].includes(String(order.status || "").toLowerCase()))
+      .sort((a, b) => (b.updatedAt?.toDate?.()?.getTime?.() || b.createdAt?.toDate?.()?.getTime?.() || 0)
+        - (a.updatedAt?.toDate?.()?.getTime?.() || a.createdAt?.toDate?.()?.getTime?.() || 0));
+    const order = paidOrders[0];
+    if (!order) return null;
+    const download = downloadsSnapshot.docs
+      .map(item => ({ id: item.id, ...item.data() }))
+      .find(item => item.orderId === (order.orderId || order.id) && item.customerId === userId);
+    return { orderId: order.orderId || order.id, productId, downloadId: download?.id || null };
+  } catch (error) {
+    console.warn("Unable to restore paid document entitlement:", error);
+    return null;
+  }
+}
+
 export default function LegalDocumentDetail() {
   const { id } = useParams();
   const [documentData, setDocumentData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
+  const [entitlement, setEntitlement] = useState(null);
   const { state: paymentState, pay, reset, refreshStatus } = usePayment();
+  const product = useMemo(() => documentData ? {
+    ...documentData,
+    type: documentData.type || "legal-document",
+    price: Number(documentData.price || 0),
+  } : null, [documentData]);
 
   useEffect(() => {
     let active = true;
@@ -87,10 +119,30 @@ export default function LegalDocumentDetail() {
   }, [id]);
 
   useEffect(() => {
+    let active = true;
+    const restoreEntitlement = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser || !product?.id) return;
+      const restored = await findPaidEntitlement(product.id, currentUser.uid);
+      if (active && restored) setEntitlement(restored);
+    };
+    restoreEntitlement();
+    return () => { active = false; };
+  }, [product?.id]);
+
+  useEffect(() => {
     if (paymentState.checkoutUrl) {
       window.open(paymentState.checkoutUrl, "_blank", "noopener,noreferrer");
     }
   }, [paymentState.checkoutUrl]);
+
+  useEffect(() => {
+    if (paymentState.step === "paid" && paymentState.orderId && product?.id) {
+      const nextEntitlement = { orderId: paymentState.orderId, productId: product.id };
+      setEntitlement(nextEntitlement);
+      try { window.localStorage.setItem(`webertech:paid-document:${auth.currentUser?.uid || "guest"}:${product.id}`, JSON.stringify(nextEntitlement)); } catch {}
+    }
+  }, [paymentState.step, paymentState.orderId, product?.id]);
 
   useEffect(() => {
     if (paymentState.step !== "paid" || !showPayment) return undefined;
@@ -98,12 +150,6 @@ export default function LegalDocumentDetail() {
     const timer = window.setTimeout(() => setShowPayment(false), 1400);
     return () => window.clearTimeout(timer);
   }, [paymentState.step, showPayment]);
-
-  const product = useMemo(() => documentData ? {
-    ...documentData,
-    type: documentData.type || "legal-document",
-    price: Number(documentData.price || 0),
-  } : null, [documentData]);
 
   const handlePay = ({ method, phone, email, firstName, lastName }) => {
     const currentUser = auth.currentUser;
@@ -138,9 +184,10 @@ export default function LegalDocumentDetail() {
   }
 
   const previewUrl = product.previewUrl || "";
-  const paid = paymentState.step === "paid";
-  const downloadUrl = paid && paymentState.orderId
-    ? `/api/document-download?orderId=${encodeURIComponent(paymentState.orderId)}&productId=${encodeURIComponent(product.id)}`
+  const paid = paymentState.step === "paid" || Boolean(entitlement?.orderId);
+  const documentOrderId = paymentState.orderId || entitlement?.orderId;
+  const downloadUrl = paid && documentOrderId
+    ? `/api/document-download?orderId=${encodeURIComponent(documentOrderId)}&productId=${encodeURIComponent(product.id)}`
     : "";
   const busy = paymentState.step === "starting" || paymentState.step === "awaiting";
 

@@ -79,6 +79,23 @@ function normalizeStatus(value) {
   return String(value || "unknown").toLowerCase().replace(/\s+/g, "-");
 }
 
+function paymentPhone(record = {}) {
+  return record.customerPhone || record.phone || record.receivingNumber || record.paymentNumber || record.payerPhone || "";
+}
+
+function paymentReference(record = {}) {
+  return record.mpesaRef || record.mpesaTxn || record.mpesaReference || record.reference || record.checkoutRequestId || record.transactionId || record.orderId || record.id || "";
+}
+
+function paymentStatus(record = {}) {
+  const value = record.status || record.paymentStatus || record.state || "unknown";
+  const normalized = String(value).toLowerCase();
+  if (["complete", "completed", "success", "successful"].includes(normalized)) return "paid";
+  if (["cancel", "canceled"].includes(normalized)) return "cancelled";
+  if (["declined", "error"].includes(normalized)) return "failed";
+  return normalized;
+}
+
 function productModule(order = {}, catalog = []) {
   const linkedProduct = catalog.find(product =>
     String(product.id || product.productId || "") === String(order.productId || "") ||
@@ -334,12 +351,12 @@ export default function CommandCenter() {
   const filteredTransactions = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return transactions;
-    return transactions.filter(transaction => `${transaction.id} ${transaction.mpesaTxn || ""} ${transaction.checkoutRequestId || ""} ${displayName(transaction)} ${transaction.status || ""} ${transaction.receivingNumber || ""}`.toLowerCase().includes(needle));
+    return transactions.filter(transaction => `${paymentReference(transaction)} ${displayName(transaction)} ${paymentStatus(transaction)} ${paymentPhone(transaction)} ${transaction.customerEmail || ""}`.toLowerCase().includes(needle));
   }, [transactions, search]);
 
   const selectedUserId = selectedUser ? (selectedUser.uid || selectedUser.id) : "";
   const userOrders = selectedUser ? orders.filter(order => order.userId === selectedUserId || order.customerId === selectedUserId || order.customerEmail === selectedUser.email || order.email === selectedUser.email) : [];
-  const userTransactions = selectedUser ? transactions.filter(transaction => transaction.userId === selectedUserId || transaction.customerEmail === selectedUser.email || transaction.email === selectedUser.email || transaction.paymentNumber === selectedUser.phone || transaction.receivingNumber === selectedUser.phone) : [];
+  const userTransactions = selectedUser ? transactions.filter(transaction => transaction.userId === selectedUserId || transaction.customerEmail === selectedUser.email || transaction.email === selectedUser.email || paymentPhone(transaction) === selectedUser.phone) : [];
   const userChats = selectedUser ? chats.filter(chat => chat.userId === selectedUserId || chat.customerId === selectedUserId || chat.customerEmail === selectedUser.email || chat.email === selectedUser.email) : [];
   const userDownloads = selectedUser ? downloads.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
   const userServices = selectedUser ? services.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
@@ -506,8 +523,8 @@ export default function CommandCenter() {
 
             {activeView === "transactions" && (
               <section className="cmd-card">
-                <div className="cmd-card-header"><div><h2 className="cmd-card-title">Transaction history ({filteredTransactions.length})</h2><p className="cmd-card-subtitle">M-PESA, NestLink and other payment records loaded on refresh.</p></div><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><input className="cmd-search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search receipt, phone, customer, status" /><button style={commonButton} onClick={() => exportCsv("webertech-transactions.csv", filteredTransactions.map(transaction => ({ id: transaction.id, mpesaTxn: transaction.mpesaTxn, checkoutRequestId: transaction.checkoutRequestId, reference: transaction.wtRef || transaction.orderId, amount: transaction.amount, status: transaction.status, customer: displayName(transaction), phone: transaction.receivingNumber || transaction.paymentNumber, date: transaction.date, createdAt: formatDate(transaction.createdAt) })))}>⬇ Excel CSV</button></div></div>
-                <div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Reference</th><th>Payment / receipt</th><th>Customer</th><th>Phone</th><th>Amount</th><th>Status</th><th>Recorded</th></tr></thead><tbody>{filteredTransactions.length ? filteredTransactions.map(transaction => <tr key={transaction.id}><td style={{ fontFamily: "monospace", fontSize: 11 }}>{transaction.wtRef || transaction.orderId || transaction.id}</td><td>{transaction.mpesaTxn || transaction.checkoutRequestId || "—"}</td><td>{displayName(transaction)}<div style={{ color: "rgba(255,255,255,.45)", fontSize: 10 }}>{transaction.email || transaction.customerEmail || ""}</div></td><td>{transaction.receivingNumber || transaction.paymentNumber || "—"}</td><td>{money(transaction.amount)}</td><td><span className={`cmd-badge cmd-badge-${normalizeStatus(transaction.status)}`}>{transaction.status || "Unknown"}</span></td><td>{formatDate(transaction.createdAt || transaction.date)}</td></tr>) : <tr><td colSpan="7"><div className="cmd-empty">No transaction records found.</div></td></tr>}</tbody></table></div>
+                <div className="cmd-card-header"><div><h2 className="cmd-card-title">Transaction history ({filteredTransactions.length})</h2><p className="cmd-card-subtitle">M-PESA, NestLink and other payment records loaded on refresh.</p></div><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}><input className="cmd-search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search receipt, phone, customer, status" /><button style={commonButton} onClick={() => exportCsv("webertech-transactions.csv", filteredTransactions.map(transaction => ({ id: transaction.id, orderId: transaction.orderId, mpesaReference: paymentReference(transaction), method: transaction.method || transaction.paymentMethod, amount: transaction.amount, status: paymentStatus(transaction), customer: displayName(transaction), phone: paymentPhone(transaction), email: transaction.customerEmail || transaction.email, resultCode: transaction.resultCode, error: transaction.failReason, date: transaction.date, createdAt: formatDate(transaction.createdAt) })))}>⬇ Excel CSV</button></div></div>
+                <div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Reference</th><th>Payment / receipt</th><th>Customer</th><th>Phone</th><th>Amount</th><th>Status</th><th>Recorded</th></tr></thead><tbody>{filteredTransactions.length ? filteredTransactions.map(transaction => <tr key={transaction.id}><td style={{ fontFamily: "monospace", fontSize: 11 }}>{transaction.wtRef || transaction.orderId || transaction.id}</td><td>{paymentReference(transaction) || "—"}</td><td>{displayName(transaction)}<div style={{ color: "rgba(255,255,255,.45)", fontSize: 10 }}>{transaction.email || transaction.customerEmail || ""}</div></td><td>{paymentPhone(transaction) || "—"}</td><td>{money(transaction.amount)}</td><td><span className={`cmd-badge cmd-badge-${normalizeStatus(paymentStatus(transaction))}`}>{paymentStatus(transaction)}</span></td><td>{formatDate(transaction.createdAt || transaction.date)}</td></tr>) : <tr><td colSpan="7"><div className="cmd-empty">No transaction records found.</div></td></tr>}</tbody></table></div>
               </section>
             )}
 

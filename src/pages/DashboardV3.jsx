@@ -97,9 +97,25 @@ export default function DashboardV3({ user: initialUser }) {
         .filter(o => o.customerId === user.uid)
         .sort((a, b) => (b.createdAt?.toDate?.() || 0) - (a.createdAt?.toDate?.() || 0));
       
-      const userDownloads = downloadsSnap.docs
+      const storedDownloads = downloadsSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(d => d.customerId === user.uid)
+        .filter(d => d.customerId === user.uid);
+      const paidDocumentEntitlements = userOrders
+        .filter(order => ["paid", "completed", "complete"].includes(String(order.status || "").toLowerCase())
+          && ["document", "legal-document", "service-document"].includes(String(order.type || "").toLowerCase())
+          && order.productId)
+        .filter(order => !storedDownloads.some(download => download.orderId === (order.orderId || order.id)))
+        .map(order => ({
+          id: `entitlement-${order.orderId || order.id}`,
+          orderId: order.orderId || order.id,
+          customerId: user.uid,
+          productId: order.productId,
+          productTitle: order.productTitle || "Original document",
+          fileName: order.productTitle ? `${order.productTitle}.pdf` : "webertech-document.pdf",
+          createdAt: order.updatedAt || order.createdAt,
+          entitlement: true,
+        }));
+      const userDownloads = [...storedDownloads, ...paidDocumentEntitlements]
         .sort((a, b) => (b.createdAt?.toDate?.() || 0) - (a.createdAt?.toDate?.() || 0));
       
       const userServices = servicesSnap.docs
@@ -594,9 +610,9 @@ export default function DashboardV3({ user: initialUser }) {
                       <tbody>
                         {downloads.map(d => (
                           <tr key={d.id}>
-                            <td>{d.fileName}</td>
-                            <td style={{ color: "#9ca3af", fontSize: 12.5 }}>{d.downloadedAt?.toDate?.().toLocaleDateString?.() || "—"}</td>
-                            <td><a href={d.fileUrl} target="_blank" rel="noreferrer" className="dash-btn" style={{ textDecoration: "none", display: "inline-block" }}>Download</a></td>
+                            <td>{d.fileName || d.productTitle || "Original document"}</td>
+                            <td style={{ color: "#9ca3af", fontSize: 12.5 }}>{d.downloadedAt?.toDate?.().toLocaleDateString?.() || d.createdAt?.toDate?.().toLocaleDateString?.() || "—"}</td>
+                            <td>{(d.fileUrl || (d.orderId && d.productId ? `/api/document-download?orderId=${encodeURIComponent(d.orderId)}&productId=${encodeURIComponent(d.productId)}` : "")) ? <a href={d.fileUrl || `/api/document-download?orderId=${encodeURIComponent(d.orderId)}&productId=${encodeURIComponent(d.productId)}`} target="_blank" rel="noreferrer" className="dash-btn" style={{ textDecoration: "none", display: "inline-block" }}>Download</a> : <span style={{ color: "#9ca3af" }}>Preparing</span>}</td>
                           </tr>
                         ))}
                       </tbody>
