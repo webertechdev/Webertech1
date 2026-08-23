@@ -53,9 +53,9 @@ function normalize(record, id) {
 
 function watermarkCanvas(context, width, height) {
   context.save();
-  context.globalAlpha = 0.2;
+  context.globalAlpha = 0.28;
   context.fillStyle = "#15803d";
-  context.font = "bold 30px Arial";
+  context.font = "bold 30px Liberation Sans";
   context.rotate(-Math.PI / 6);
 
   const diagonal = Math.sqrt(width * width + height * height);
@@ -72,13 +72,13 @@ function watermarkCanvas(context, width, height) {
   context.fillRect(0, Math.max(0, height - 34), width, 34);
   context.globalAlpha = 1;
   context.fillStyle = "#ffffff";
-  context.font = "bold 15px Arial";
+  context.font = "bold 15px Liberation Sans";
   context.fillText("webertech.co.ke · WATERMARKED PREVIEW · NOT FOR REDISTRIBUTION", 16, height - 12);
   context.restore();
 }
 
 async function renderFirstPage(buffer) {
-  const [{ createCanvas }, pdfjsLib, pdfjsWorker] = await Promise.all([
+  const [{ createCanvas, GlobalFonts }, pdfjsLib, pdfjsWorker] = await Promise.all([
     import("@napi-rs/canvas"),
     import("pdfjs-dist/legacy/build/pdf.mjs"),
     import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
@@ -86,9 +86,17 @@ async function renderFirstPage(buffer) {
   // PDF.js 4 uses a fake-worker fallback in Node. Supplying the bundled worker
   // module globally prevents it from resolving a non-existent Vercel filesystem path.
   if (!globalThis.pdfjsWorker) globalThis.pdfjsWorker = pdfjsWorker;
-  const standardFontDataDir = dirname(
-    require.resolve("pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf")
+  const standardFontDataPath = require.resolve(
+    "pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf"
   );
+  const standardFontDataDir = dirname(standardFontDataPath);
+  const boldFontDataPath = require.resolve(
+    "pdfjs-dist/standard_fonts/LiberationSans-Bold.ttf"
+  );
+  if (!GlobalFonts.families.some(({ family }) => family === "Liberation Sans")) {
+    GlobalFonts.registerFromPath(standardFontDataPath, "Liberation Sans");
+    GlobalFonts.registerFromPath(boldFontDataPath, "Liberation Sans");
+  }
   const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(buffer),
     disableWorker: true,
