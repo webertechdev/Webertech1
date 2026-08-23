@@ -348,6 +348,7 @@ export default function UnifiedControlCenterV3() {
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatRetention, setChatRetention] = useState("off");
+  const [defaultChatMode, setDefaultChatMode] = useState("ai");
   const [chatModeSaving, setChatModeSaving] = useState(false);
   const [refreshingChat, setRefreshingChat] = useState(false);
   const [adminReply, setAdminReply] = useState("");
@@ -1043,6 +1044,19 @@ export default function UnifiedControlCenterV3() {
       toast.error("Could not change chat mode: " + error.message);
     } finally {
       setChatModeSaving(false);
+    }
+  };
+
+  const handleDefaultChatModeChange = async (mode) => {
+    setDefaultChatMode(mode);
+    try {
+      await setDoc(doc(db, "config", "weberai"), {
+        defaultChatMode: mode,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      toast.success(mode === "ai" ? "New chats will use WeberAI by default." : "New chats will be ready for Admin Agent handling.");
+    } catch (error) {
+      toast.error("Could not save default chat mode: " + error.message);
     }
   };
 
@@ -1775,7 +1789,28 @@ export default function UnifiedControlCenterV3() {
 
             {/* SUPPORT */}
             {tab === "support" && (
-              <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16 }}>
+              <div>
+                <div className="uc-card" style={{ marginBottom: 16, border: "1px solid rgba(74,222,128,0.35)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                    <div>
+                      <h3 className="uc-card-title" style={{ marginBottom: 4 }}>Support routing & retention</h3>
+                      <p style={{ color: "rgba(255,255,255,0.62)", fontSize: 12, margin: 0 }}>AI is the default for new chats. Select a chat below to hand it to an Admin Agent or return it to WeberAI.</p>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ color: "rgba(255,255,255,0.65)", fontSize: 12 }}>New-chat default:</span>
+                      <button onClick={() => handleDefaultChatModeChange("ai")} style={{ border: "1px solid #22c55e", background: defaultChatMode === "ai" ? "#16a34a" : "transparent", color: "#fff", borderRadius: 7, padding: "7px 10px", cursor: "pointer", fontSize: 12 }}>AI Support</button>
+                      <button onClick={() => handleDefaultChatModeChange("admin")} style={{ border: "1px solid #f59e0b", background: defaultChatMode === "admin" ? "#b45309" : "transparent", color: "#fff", borderRadius: 7, padding: "7px 10px", cursor: "pointer", fontSize: 12 }}>Admin Agent</button>
+                      <select value={chatRetention} onChange={handleChatRetentionChange} aria-label="Chat history retention" style={{ background: "#0f172a", color: "#fff", border: "1px solid rgba(134,239,172,0.5)", borderRadius: 7, padding: "7px 8px", fontSize: 12 }}>
+                        <option value="off">Disappear: Off (keep forever)</option>
+                        <option value="week">Disappear after 1 week</option>
+                        <option value="month">Disappear after 1 month</option>
+                        <option value="quarter">Disappear after 3 months</option>
+                        <option value="year">Disappear after 1 year</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16 }}>
                 <div className="uc-card" style={{ maxHeight: "600px", overflowY: "auto" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
                     <div>
@@ -1875,6 +1910,7 @@ export default function UnifiedControlCenterV3() {
                   ) : (
                     <p style={{ color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "40px 0" }}>Select a chat to start</p>
                   )}
+                </div>
                 </div>
               </div>
             )}
