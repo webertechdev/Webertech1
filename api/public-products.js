@@ -1,20 +1,9 @@
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getDb } from "./_lib/firebaseAdmin.js";
+import { fetchRemotePdf, getDocumentSource, getFileName } from "./_lib/documentLinks.js";
 
-function getAdminApp() {
-  if (getApps().length > 0) return getApps()[0];
-
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-
-  if (!projectId || !clientEmail || !privateKey) {
-    const error = new Error("Server catalog access is not configured.");
-    error.code = "SERVER_CATALOG_NOT_CONFIGURED";
-    throw error;
-  }
-
-  return initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+function getQuery(req, key) {
+  const value = req.query?.[key];
+  return Array.isArray(value) ? value[0] : String(value || "").trim();
 }
 
 function normalize(record, id) {
@@ -34,10 +23,11 @@ function normalize(record, id) {
     icon: record.icon || "📄",
     features: Array.isArray(record.features)
       ? record.features
-      : String(record.features || "").split(",").map(value => value.trim()).filter(Boolean),
-    // The original link is intentionally not returned by this public endpoint.
-    // Customers preview through a server route and receive the original only
-    // through the paid-order delivery route.
+      : String(record.features || "")
+          .split(",")
+          .map(value => value.trim())
+          .filter(Boolean),
+    // Never expose the original hosted PDF URL in the public catalog.
     previewUrl: sourceUrl ? `/api/document-preview?productId=${encodeURIComponent(id)}` : "",
     hasDocument: Boolean(sourceUrl),
     fileName,
@@ -46,17 +36,137 @@ function normalize(record, id) {
   };
 }
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Cache-Control", "no-store, max-age=0");
+function watermarkCanvas(context, width, height) {
+  context.save();
+  context.globalAlpha = 0.2;
+  context.fillStyle = "#15803d";
+  context.font = "bold 30px Arial";
+  context.rotate(-Math.PI / 6);
 
-  if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+  const diagonal = Math.sqrt(width * width + height * height);
+  for (let y = -diagonal; y < diagonal; y += 150) {
+    for (let x = -diagonal; x < diagonal; x += 260) {
+      context.fillText("webertech.co.ke", x, y);
+    }
+  }
+  context.restore();
+
+  context.save();
+  context.globalAlpha = 0.8;
+  context.fillStyle = "#166534";
+  context.fillRect(0, Math.max(0, height - 34), width, 34);
+  context.globalAlpha = 1;
+  context.fillStyle = "#ffffff";
+  context.font = "bold 15px Arial";
+  context.fillText("webertech.co.ke · WATERMARKED PREVIEW · NOT FOR REDISTRIBUTION", 16, height - 12);
+  context.restore();
+}
+
+async function renderFirstPage(buffer) {
+  const [{ createCanvas }, pdfjsLib] = await Promise.all([
+    import("@napi-rs/canvas"),
+    import("pdfjs-dist/legacy/build/pdf.mjs"),
+  ]);
+  const pdf = await pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    disableWorker: true,
+    useSystemFonts: true,
+  }).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 1.35 });
+  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+  const context = canvas.getContext("2d");
+
+  await page.render({ canvasContext: context, viewport }).promise;
+  watermarkCanvas(context, canvas.width, canvas.height);
+  return canvas.toBuffer("image/png");
+}
+
+async function handlePreview(req, res) {
+  const productId = getQuery(req, "productId");
+  if (!productId) return res.status(400).json({ error: "productId is required" });
 
   try {
-    const db = getFirestore(getAdminApp());
+    const db = getDb();
+    const snapshot = await db.collection("products").doc(productId).get();
+    if (!snapshot.exists || snapshot.data()?.published === false) {
+      return res.status(404).json({ error: "Published document not found." });
+    }
+
+    const source = getDocumentSource(snapshot.data());
+    if (!source) return res.status(404).json({ error: "This document has no public PDF link." });
+
+    const { buffer } = await fetchRemotePdf(source);
+    const preview = await renderFirstPage(buffer);
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Content-Disposition", "inline; filename=webertech-watermarked-preview.png");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.status(200).send(preview);
+  } catch (error) {
+    console.error("Document preview rendering error", {
+      code: error?.code || "UNKNOWN",
+      message: error?.message || "",
+    });
+    const status = error?.code === "INVALID_DOCUMENT_LINK" || error?.code === "DOCUMENT_NOT_PDF" ? 422 : 502;
+    return res.status(status).json({ error: error.message || "Unable to prepare the watermarked preview." });
+  }
+}
+
+async function handleDownload(req, res) {
+  const orderId = getQuery(req, "orderId");
+  const productId = getQuery(req, "productId");
+  if (!orderId || !productId) {
+    return res.status(400).json({ error: "orderId and productId are required" });
+  }
+
+  try {
+    const db = getDb();
+    const orderSnapshot = await db.collection("orders").doc(orderId).get();
+    if (!orderSnapshot.exists) return res.status(404).json({ error: "Payment order not found." });
+
+    const order = orderSnapshot.data();
+    if (order.status !== "paid" || order.type !== "document" || String(order.productId) !== String(productId)) {
+      return res.status(403).json({ error: "Payment must be confirmed before downloading this document." });
+    }
+
+    const productSnapshot = await db.collection("products").doc(productId).get();
+    if (!productSnapshot.exists) return res.status(404).json({ error: "Document not found." });
+
+    const product = productSnapshot.data();
+    const source = getDocumentSource(product);
+    if (!source) return res.status(404).json({ error: "This document has no public PDF link." });
+
+    const { buffer } = await fetchRemotePdf(source);
+    const fileName = getFileName(product.fileName || product.title, "webertech-document.pdf");
+
+    // Best-effort usage tracking; a counter failure must not block paid delivery.
+    try {
+      const downloadSnapshot = await db.collection("downloads").where("orderId", "==", orderId).limit(1).get();
+      if (!downloadSnapshot.empty) {
+        await downloadSnapshot.docs[0].ref.update({
+          downloadCount: Number(downloadSnapshot.docs[0].data()?.downloadCount || 0) + 1,
+          lastDownloadedAt: new Date(),
+        });
+      }
+    } catch (trackingError) {
+      console.warn("Download counter update skipped", trackingError?.message || trackingError);
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Length", String(buffer.length));
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.status(200).send(buffer);
+  } catch (error) {
+    console.error("Document delivery error", { code: error?.code || "UNKNOWN" });
+    const status = error?.code === "DOCUMENT_NOT_PDF" || error?.code === "INVALID_DOCUMENT_LINK" ? 422 : 502;
+    return res.status(status).json({ error: error.message || "Unable to deliver the document." });
+  }
+}
+
+async function handleCatalog(req, res) {
+  try {
+    const db = getDb();
     const snapshot = await db.collection("products").get();
     const products = snapshot.docs
       .map(item => normalize(item.data(), item.id))
@@ -66,11 +176,23 @@ export default async function handler(req, res) {
     return res.status(200).json({ products });
   } catch (error) {
     console.error("Published product catalog error", { code: error?.code || "UNKNOWN" });
-    if (error?.code === "SERVER_CATALOG_NOT_CONFIGURED") {
-      return res.status(503).json({ error: "Published product catalog is not configured." });
-    }
     return res.status(500).json({ error: "Unable to load the published product catalog." });
   }
+}
+
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "private, no-store, max-age=0");
+
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  const route = getQuery(req, "route");
+  if (route === "preview") return handlePreview(req, res);
+  if (route === "download") return handleDownload(req, res);
+  return handleCatalog(req, res);
 }
 
 export const runtime = "nodejs";
