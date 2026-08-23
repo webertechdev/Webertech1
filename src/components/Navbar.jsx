@@ -28,6 +28,7 @@ export default function Navbar() {
   const [user,     setUser]     = useState(null);
   const [isAdmin,  setIsAdmin]  = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [chatAlert, setChatAlert] = useState(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -49,6 +50,33 @@ export default function Navbar() {
     window.addEventListener("scroll", fn);
     return () => window.removeEventListener("scroll", fn);
   }, []);
+
+  useEffect(() => {
+    const handleChatNotification = event => {
+      const detail = event.detail || {};
+      const expectedAudience = isAdmin ? "admin" : "customer";
+      if (detail.audience !== expectedAudience) return;
+      setChatAlert({
+        chatId: detail.chatId,
+        count: Number(detail.count || 1),
+        customerName: detail.customerName || "Customer",
+        text: detail.text || "New support message"
+      });
+    };
+    window.addEventListener("webertech:chat-notification", handleChatNotification);
+    return () => window.removeEventListener("webertech:chat-notification", handleChatNotification);
+  }, [isAdmin]);
+
+  const openChatAlert = () => {
+    const alert = chatAlert;
+    setChatAlert(null);
+    if (!alert) return;
+    if (isAdmin) {
+      window.location.href = `/control?tab=support&supportChat=${encodeURIComponent(alert.chatId)}`;
+    } else {
+      window.dispatchEvent(new CustomEvent("webertech:open-customer-chat", { detail: { chatId: alert.chatId } }));
+    }
+  };
 
   const logout  = async () => { await signOut(auth); setMenuOpen(false); };
   const isActive = (to) => !to.startsWith("http") && location.pathname === to;
@@ -174,6 +202,23 @@ export default function Navbar() {
         }
 
         /* Mobile menu */
+        .wtn-alert {
+          position: fixed; top: calc(var(--nav-h) + 10px); left: 50%; transform: translateX(-50%);
+          z-index: 898; width: min(560px, calc(100vw - 24px)); display: flex; align-items: center;
+          justify-content: space-between; gap: 12px; padding: 10px 12px 10px 14px;
+          border: 1px solid rgba(74,222,128,.38); border-radius: 12px;
+          background: rgba(15,23,42,.98); box-shadow: 0 12px 30px rgba(0,0,0,.28);
+          color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; animation: wtn-alert-in .2s ease both;
+        }
+        .wtn-alert-copy { min-width: 0; display: flex; align-items: center; gap: 9px; }
+        .wtn-alert-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; flex: 0 0 auto; box-shadow: 0 0 0 4px rgba(74,222,128,.14); }
+        .wtn-alert-text { min-width: 0; font-size: 12px; line-height: 1.35; }
+        .wtn-alert-title { font-weight: 800; color: #bbf7d0; }
+        .wtn-alert-preview { color: rgba(255,255,255,.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
+        .wtn-alert-button { border: 1px solid rgba(74,222,128,.45); border-radius: 8px; padding: 7px 10px; background: #16a34a; color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+        @keyframes wtn-alert-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        @media (max-width: 640px) { .wtn-alert { top: calc(var(--nav-h) + 6px); } .wtn-alert-preview { max-width: 145px; } .wtn-alert-button { padding: 7px 8px; } }
+
         .wtn-menu {
           position: fixed; top: var(--nav-h); left: 0; right: 0; bottom: 0;
           background: rgba(15,23,42,0.98); backdrop-filter: blur(20px);
@@ -290,6 +335,19 @@ export default function Navbar() {
           </div>
         </div>
       </nav>
+
+      {chatAlert && (
+        <div className="wtn-alert" role="status" aria-live="polite">
+          <div className="wtn-alert-copy">
+            <span className="wtn-alert-dot" />
+            <div className="wtn-alert-text">
+              <div className="wtn-alert-title">{isAdmin ? `New message from ${chatAlert.customerName}` : "Support replied to your chat"}</div>
+              <div className="wtn-alert-preview">{chatAlert.count > 1 ? `${chatAlert.count} new messages · ` : ""}{chatAlert.text}</div>
+            </div>
+          </div>
+          <button className="wtn-alert-button" onClick={openChatAlert}>{isAdmin ? "Open Support" : "Reply in chat"}</button>
+        </div>
+      )}
 
       {/* ── Mobile menu ── */}
       {menuOpen && (

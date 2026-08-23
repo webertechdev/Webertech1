@@ -4,12 +4,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import {
-  collection, addDoc, serverTimestamp,
+  collection, addDoc, serverTimestamp, increment,
   doc, setDoc, getDoc, getDocs, query, orderBy, where, onSnapshot
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { toast, Toaster } from "react-hot-toast";
+import { playMessageNotificationSound } from "../utils/chatNotifications";
 
 const BUNDLES_URL  = "https://bundles.webertech.co.ke";
 const WHATSAPP_URL = "https://wa.me/254722508904";
@@ -185,9 +186,13 @@ export default function ChatWidgetEnhanced() {
   const [authPass,    setAuthPass]    = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [historyRestoring, setHistoryRestoring] = useState(false);
   const bottomRef   = useRef(null);
   const inputRef    = useRef(null);
   const cssInjected = useRef(false);
+  const historyReadyRef = useRef(false);
+  const knownMessageIdsRef = useRef(new Set());
 
   useEffect(() => {
     if (cssInjected.current) return;
@@ -202,11 +207,20 @@ export default function ChatWidgetEnhanced() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    const openFromNotification = () => openChat();
+    window.addEventListener("webertech:open-customer-chat", openFromNotification);
+    return () => window.removeEventListener("webertech:open-customer-chat", openFromNotification);
+  }, []);
+
   const loadMessages = async (sid, language = lang) => {
     if (!sid || !currentUser) return;
     setRefreshing(true);
     const greeting = { role:"ai", text:GREETING[language], time:tstamp(), id:"greeting" };
     try {
+      const chatSnap = await getDoc(doc(db, "chats", sid));
+      const chatData = chatSnap.exists() ? chatSnap.data() : {};
+      setChatMode(chatData.chatMode === "admin" || chatData.adminTakeover ? "admin" : "ai");
       const snap = await getDocs(query(collection(db, "chats", sid, "messages"), orderBy("timestamp", "asc")));
       const newMsgs = snap.docs.map(d => ({
         role: d.data().sender === "user" ? "user" : d.data().sender === "admin" ? "admin" : d.data().sender === "system" ? "system" : "ai",
@@ -214,8 +228,11 @@ export default function ChatWidgetEnhanced() {
         time: d.data().timestamp?.toDate?.().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || tstamp(),
         id: d.id,
         pdfData: d.data().metadata?.pdfData,
-        metadata: d.data().metadata || {}
+        metadata: d.data().metadata || {},
+        sender: d.data().sender || "ai"
       }));
+      knownMessageIdsRef.current = new Set(snap.docs.map(d => d.id));
+      historyReadyRef.current = true;
       setMsgs([greeting, ...newMsgs]);
     } catch (err) {
       console.error("Chat refresh failed:", err);
@@ -231,43 +248,66 @@ export default function ChatWidgetEnhanced() {
       setSessionId(null);
       setMsgs([]);
       setChatMode("ai");
+      setUnreadCount(0);
+      setUnread(false);
+      setHistoryRestoring(false);
+      historyReadyRef.current = false;
+      knownMessageIdsRef.current = new Set();
       return () => { cancelled = true; };
     }
 
     setSessionId(null);
-    resolvePersistentChatId(currentUser).then(sid => {
+    setHistoryRestoring(true);
+    historyReadyRef.current = false;
+    knownMessageIdsRef.current = new Set();
+    resolvePersistentChatId(currentUser).then(async sid => {
       if (cancelled) return;
       setSessionId(sid);
-      loadMessages(sid, lang);
+      await loadMessages(sid, lang);
+      if (!cancelled) setHistoryRestoring(false);
+    }).catch(error => {
+      console.warn("Chat history recovery failed:", error);
+      if (!cancelled) setHistoryRestoring(false);
     });
 
     return () => { cancelled = true; };
   }, [lang, currentUser?.uid]);
 
-  // Keep the side chat synchronized with customer/admin replies and takeover
-  // events, so the customer does not have to start over after a reload.
+  // Only the active message subcollection stays live. General collections and
+  // the chat summary document remain refresh/read-on-demand data.
   useEffect(() => {
     if (!sessionId || !currentUser) return undefined;
-    const chatUnsubscribe = onSnapshot(doc(db, "chats", sessionId), snap => {
-      const data = snap.exists() ? snap.data() : {};
-      setChatMode(data.chatMode === "admin" || data.adminTakeover ? "admin" : "ai");
-    }, error => console.warn("Chat status listener failed:", error));
+    historyReadyRef.current = false;
+    knownMessageIdsRef.current = new Set();
     const messagesUnsubscribe = onSnapshot(query(collection(db, "chats", sessionId, "messages"), orderBy("timestamp", "asc")), snap => {
       const greeting = { role:"ai", text:GREETING[lang], time:tstamp(), id:"greeting" };
-      const newMsgs = snap.docs.map(d => ({
+      const mapped = snap.docs.map(d => ({
         role: d.data().sender === "user" ? "user" : d.data().sender === "admin" ? "admin" : d.data().sender === "system" ? "system" : "ai",
         text: typeof d.data().text === "string" ? d.data().text : "",
         time: d.data().timestamp?.toDate?.().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || tstamp(),
         id: d.id,
         pdfData: d.data().metadata?.pdfData,
-        metadata: d.data().metadata || {}
+        metadata: d.data().metadata || {},
+        sender: d.data().sender || "ai"
       }));
-      setMsgs([greeting, ...newMsgs]);
+      const latestModeNotice = [...mapped].reverse().find(message => ["mode_changed", "agent_joined", "ai_resumed"].includes(message.metadata?.event));
+      if (latestModeNotice) setChatMode(latestModeNotice.metadata.mode === "admin" ? "admin" : "ai");
+      const newIncoming = historyReadyRef.current
+        ? mapped.filter(message => !knownMessageIdsRef.current.has(message.id) && message.role === "admin")
+        : [];
+      if (newIncoming.length > 0) {
+        setUnreadCount(count => count + newIncoming.length);
+        setUnread(true);
+        playMessageNotificationSound();
+        window.dispatchEvent(new CustomEvent("webertech:chat-notification", {
+          detail: { audience: "customer", chatId: sessionId, count: newIncoming.length, text: newIncoming[newIncoming.length - 1].text }
+        }));
+      }
+      knownMessageIdsRef.current = new Set(mapped.map(message => message.id));
+      historyReadyRef.current = true;
+      setMsgs([greeting, ...mapped]);
     }, error => console.warn("Chat message listener failed:", error));
-    return () => {
-      chatUnsubscribe();
-      messagesUnsubscribe();
-    };
+    return () => messagesUnsubscribe();
   }, [sessionId, currentUser?.uid, lang]);
 
   useEffect(() => {
@@ -281,7 +321,15 @@ export default function ChatWidgetEnhanced() {
     }
   }, [open]);
 
-  const openChat  = () => { setOpen(true); setClosing(false); };
+  const openChat = () => {
+    setOpen(true);
+    setClosing(false);
+    setUnread(false);
+    setUnreadCount(0);
+    if (currentUser && sessionId) {
+      setDoc(doc(db, "chats", sessionId), { unreadForUser: false, userUnreadCount: 0 }, { merge: true }).catch(() => {});
+    }
+  };
   const closeChat = () => {
     setClosing(true);
     setTimeout(() => { setOpen(false); setClosing(false); }, 220);
@@ -291,10 +339,10 @@ export default function ChatWidgetEnhanced() {
     if (!sessionId) return;
     try {
       const chatRef = doc(db, "chats", sessionId);
-      const chatSnap = await getDoc(chatRef);
-      const chatData = chatSnap.exists() ? chatSnap.data() : {};
 
-      // Sync customer info and last message for Admin Dashboard
+      // Sync customer info and last message for Admin Dashboard. The current
+      // mode is already restored from this thread, so no extra summary read is
+      // needed for every message.
       await setDoc(chatRef, {
         sessionId,
         userId:       currentUser?.uid || null,
@@ -304,8 +352,12 @@ export default function ChatWidgetEnhanced() {
         lang,
         updatedAt:    serverTimestamp(),
         status:       "active",
-        chatMode:     chatData.chatMode || (chatData.adminTakeover ? "admin" : "ai"),
-        adminTakeover: chatData.adminTakeover || false
+        chatMode,
+        adminTakeover: chatMode === "admin",
+        threadKey:    `user_${currentUser.uid}`,
+        lastSender:   role === "user" ? "user" : role === "admin" ? "admin" : "ai",
+        ...(role === "user" ? { unreadForAdmin: true, adminUnreadCount: increment(1) } : {}),
+        ...(role === "admin" ? { unreadForUser: true, userUnreadCount: increment(1) } : {})
       }, { merge: true });
 
       await addDoc(collection(db, "chats", sessionId, "messages"), {
@@ -443,13 +495,14 @@ export default function ChatWidgetEnhanced() {
           <div className="wt-head">
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               <div style={{ width:36, height:36, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🤖</div>
-              <div>
-                <div style={{ color:"#fff", fontWeight:800, fontSize:14 }}>WeberAI</div>
-                <div style={{ color:"rgba(255,255,255,0.75)", fontSize:11, display:"flex", alignItems:"center", gap:5, marginTop:2 }}>
-                  <span style={{ width:6, height:6, borderRadius:"50%", background:"#4ade80", display:"inline-block" }} />
-                  Online & Ready
-                </div>
-              </div>
+                                <div>
+                    <div style={{ color:"#fff", fontWeight:800, fontSize:14 }}>{chatMode === "admin" ? "Support Agent" : "WeberAI"}</div>
+                    <div style={{ color:"rgba(255,255,255,0.75)", fontSize:11, display:"flex", alignItems:"center", gap:5, marginTop:2 }}>
+                      <span style={{ width:6, height:6, borderRadius:"50%", background:"#4ade80", display:"inline-block" }} />
+                      {chatMode === "admin" ? "Agent online" : "AI online"}
+                    </div>
+                  </div>
+
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <select
@@ -524,7 +577,7 @@ export default function ChatWidgetEnhanced() {
             </div>
           ) : (
             <>
-              {showAgentStatus && <div className="wt-status">👤 Support agent joined this chat. You can now send a message directly to WeberTech.</div>}
+              {historyRestoring && <div className="wt-status">Restoring your saved chat history…</div>}
               <div className="wt-msgs">
                 {msgs.filter(m => m && m.text).map(m => {
                   const isUser = m.role === "user";
@@ -586,7 +639,7 @@ export default function ChatWidgetEnhanced() {
       {!open && !closing && (
         <button className="wt-tab" onClick={openChat}>
           <span className="wt-tab-dot" />
-          {unread ? "Chat with WeberAI" : "AI Support"}
+          {unreadCount > 0 ? `AI Support · ${unreadCount} new` : (chatMode === "admin" ? "Support Agent" : "AI Support")}
         </button>
       )}
     </>

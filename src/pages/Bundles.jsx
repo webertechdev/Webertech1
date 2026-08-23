@@ -17,7 +17,6 @@ import {
 } from "react-icons/fa";
 
 // ─── Firebase ──────────────────────────────────────────────────
-import ChatWidget from "./ChatWidget";
 import { auth, db } from "../config/firebase";
 import {
   onAuthStateChanged,
@@ -1120,8 +1119,6 @@ export default function Bundles() {
         </footer>
       </div>
 
-      {/* ── AI Support Chat — floats on every page ── */}
-      <ChatWidget />
     </>
   );
 }

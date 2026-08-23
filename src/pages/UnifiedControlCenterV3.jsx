@@ -2,11 +2,12 @@
 // WeberTech Control Center v3 - With Upload Progress & Fixed Hanging
 
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, onSnapshot, runTransaction, increment } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+import { playMessageNotificationSound } from "../utils/chatNotifications";
 
 function withTimeout(promise, timeoutMs, message) {
   return new Promise((resolve, reject) => {
@@ -352,7 +353,10 @@ export default function UnifiedControlCenterV3() {
   const [chatModeSaving, setChatModeSaving] = useState(false);
   const [refreshingChat, setRefreshingChat] = useState(false);
   const [adminReply, setAdminReply] = useState("");
+  const [adminUnreadCount, setAdminUnreadCount] = useState(0);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const adminHistoryReadyRef = useRef(false);
+  const adminKnownMessageIdsRef = useRef(new Set());
   const emptyDocumentForm = {
     title: "",
     description: "",
@@ -716,6 +720,8 @@ export default function UnifiedControlCenterV3() {
       const msgs = messagesSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
+      adminKnownMessageIdsRef.current = new Set(messagesSnap.docs.map(d => d.id));
+      adminHistoryReadyRef.current = true;
       setChatMessages(msgs);
       requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }));
     } catch (err) {
@@ -726,18 +732,57 @@ export default function UnifiedControlCenterV3() {
     }
   };
 
+  const openAdminChat = chat => {
+    setTab("support");
+    setSelectedChat(chat);
+    setAdminUnreadCount(0);
+    setChats(prev => prev.map(item => item.id === chat.id ? { ...item, unreadForAdmin: false, adminUnreadCount: 0 } : item));
+    setDoc(doc(db, "chats", chat.id), { unreadForAdmin: false, adminUnreadCount: 0 }, { merge: true }).catch(() => {});
+  };
+
   useEffect(() => {
     loadChatMessages(selectedChat);
   }, [selectedChat?.id]);
 
-  // Keep the selected support conversation live while the admin is viewing it.
-  // The stored message subcollection remains the single source of truth.
+  useEffect(() => {
+    if (!chats.length) return;
+    const requestedChatId = new URLSearchParams(window.location.search).get("supportChat");
+    if (!requestedChatId) return;
+    const requestedChat = chats.find(chat => chat.id === requestedChatId);
+    if (requestedChat) openAdminChat(requestedChat);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("supportChat");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [chats]);
+
+  // Keep only the selected message subcollection live. No collection-wide
+  // listener is used, and the initial snapshot is never treated as unread.
   useEffect(() => {
     if (!selectedChat) return undefined;
+    adminHistoryReadyRef.current = false;
+    adminKnownMessageIdsRef.current = new Set();
     const unsubscribe = onSnapshot(collection(db, "chats", selectedChat.id, "messages"), snapshot => {
       const msgs = snapshot.docs
         .map(item => ({ id: item.id, ...item.data() }))
         .sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
+      const newIncoming = adminHistoryReadyRef.current
+        ? msgs.filter(message => !adminKnownMessageIdsRef.current.has(message.id) && message.sender === "user")
+        : [];
+      if (newIncoming.length > 0) {
+        setAdminUnreadCount(count => count + newIncoming.length);
+        playMessageNotificationSound();
+        window.dispatchEvent(new CustomEvent("webertech:chat-notification", {
+          detail: {
+            audience: "admin",
+            chatId: selectedChat.id,
+            customerName: selectedChat.customerName || "Customer",
+            count: newIncoming.length,
+            text: newIncoming[newIncoming.length - 1].text || "New customer message"
+          }
+        }));
+      }
+      adminKnownMessageIdsRef.current = new Set(msgs.map(message => message.id));
+      adminHistoryReadyRef.current = true;
       setChatMessages(msgs);
       requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }));
     }, error => {
@@ -1049,23 +1094,30 @@ export default function UnifiedControlCenterV3() {
     if (!selectedChat || chatModeSaving) return;
     setChatModeSaving(true);
     const adminTakeover = mode === "admin";
-    const wasAdmin = selectedChat.chatMode === "admin" || selectedChat.adminTakeover === true;
     try {
-      await setDoc(doc(db, "chats", selectedChat.id), {
-        chatMode: mode,
-        adminTakeover,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      const changed = await runTransaction(db, async transaction => {
+        const chatRef = doc(db, "chats", selectedChat.id);
+        const snapshot = await transaction.get(chatRef);
+        const data = snapshot.exists() ? snapshot.data() : {};
+        const currentMode = data.chatMode === "admin" || data.adminTakeover === true ? "admin" : "ai";
+        if (currentMode === mode) return false;
+        transaction.set(chatRef, {
+          chatMode: mode,
+          adminTakeover,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        return true;
+      });
 
-      // Persist the notice inside the same chat so the customer sees it after
-      // login/reload, rather than relying on a temporary local banner.
-      if (adminTakeover && !wasAdmin) {
+      // The transaction makes this idempotent: clicking the already-active
+      // mode, or two fast admin actions, cannot create duplicate notices.
+      if (changed) {
         const eventRef = doc(collection(db, "chats", selectedChat.id, "messages"));
         await setDoc(eventRef, {
           sender: "system",
-          type: "agent_joined",
-          text: "Support agent joined this chat",
-          metadata: { event: "agent_joined" },
+          type: adminTakeover ? "agent_joined" : "ai_resumed",
+          text: adminTakeover ? "Support agent joined this chat" : "WeberAI is back on this chat",
+          metadata: { event: adminTakeover ? "agent_joined" : "mode_changed", mode },
           timestamp: serverTimestamp(),
         });
       }
@@ -1115,18 +1167,6 @@ export default function UnifiedControlCenterV3() {
     setLoading(true);
 
     try {
-      const wasAdmin = selectedChat.chatMode === "admin" || selectedChat.adminTakeover === true;
-      if (!wasAdmin) {
-        const eventRef = doc(collection(db, "chats", selectedChat.id, "messages"));
-        await setDoc(eventRef, {
-          sender: "system",
-          type: "agent_joined",
-          text: "Support agent joined this chat",
-          metadata: { event: "agent_joined" },
-          timestamp: serverTimestamp(),
-        });
-      }
-
       const newMsgRef = doc(collection(db, "chats", selectedChat.id, "messages"));
 
       await setDoc(newMsgRef, {
@@ -1140,6 +1180,8 @@ export default function UnifiedControlCenterV3() {
         updatedAt: serverTimestamp(),
         chatMode: "admin",
         adminTakeover: true,
+        unreadForUser: true,
+        userUnreadCount: increment(1),
       }, { merge: true });
 
       setAdminReply("");
@@ -1184,7 +1226,9 @@ export default function UnifiedControlCenterV3() {
         .uc-tab-btn:hover { background: rgba(22,163,74,0.15); color: #4ade80; }
         .uc-tab-btn.active { background: #16a34a; color: #fff; box-shadow: 0 4px 12px rgba(22,163,74,0.4); }
         .uc-main { display: flex; flex-direction: column; gap: 24px; }
-        .uc-card { background: rgba(30,41,59,0.6); border: 1px solid rgba(22,163,74,0.2); border-radius: 16px; padding: 24px; }
+                 .uc-card { background: rgba(30,41,59,0.6); border: 1px solid rgba(22,163,74,0.2); border-radius: 16px; padding: 24px; }
+         .uc-online-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,.12); flex: 0 0 auto; }
+
         .uc-card-title { color: #fff; font-size: 18px; font-weight: 700; margin: 0 0 20px; }
         .uc-input { width: 100%; padding: 12px 16px; background: rgba(30,41,59,0.8); border: 1px solid rgba(22,163,74,0.3); border-radius: 10px; color: #fff; font-size: 14px; margin-bottom: 12px; font-family: inherit; }
         .uc-input:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.2); }
@@ -1325,7 +1369,7 @@ export default function UnifiedControlCenterV3() {
               🤖 AI Training
             </button>
             <button className={`uc-tab-btn ${tab === "support" ? "active" : ""}`} onClick={() => setTab("support")}>
-              💬 Support ({chats.length})
+              💬 Support ({chats.length}) {adminUnreadCount > 0 && <span style={{ marginLeft: 6, background: "#ef4444", color: "#fff", borderRadius: 99, padding: "2px 6px", fontSize: 10 }}>{adminUnreadCount}</span>}
             </button>
             <button className={`uc-tab-btn ${tab === "inbox" ? "active" : ""}`} onClick={() => setTab("inbox")}>
               📥 Requests ({INBOX_COLLECTIONS.reduce((sum, item) => sum + (inboxData[item.id]?.length || 0), 0)})
@@ -1877,7 +1921,7 @@ export default function UnifiedControlCenterV3() {
                     chats.map(chat => (
                       <div
                         key={chat.id}
-                        onClick={() => setSelectedChat(chat)}
+                        onClick={() => openAdminChat(chat)}
                         style={{
                           padding: 12,
                           background: selectedChat?.id === chat.id ? "rgba(22,163,74,0.2)" : "rgba(255,255,255,0.05)",
@@ -1890,7 +1934,7 @@ export default function UnifiedControlCenterV3() {
                       >
                         <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 13 }}>{chat.customerName || "Customer"}</div>
                         <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, marginTop: 4 }}>{chat.lastMessage?.substring(0, 40) || "No messages yet"}...</div>
-                        <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10, marginTop: 5 }}>{formatInboxDate(chat.updatedAt || chat.createdAt)} · {chat.chatMode === "admin" || chat.adminTakeover ? "Admin Agent" : "AI"}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7, color: "rgba(255,255,255,0.42)", fontSize: 10, marginTop: 5 }}><span className="uc-online-dot" /> {formatInboxDate(chat.updatedAt || chat.createdAt)} · {chat.chatMode === "admin" || chat.adminTakeover ? "Admin Agent" : "AI"}{(chat.unreadForAdmin || Number(chat.adminUnreadCount || 0) > 0) && <strong style={{ marginLeft: "auto", color: "#fbbf24", fontSize: 10 }}>{chat.adminUnreadCount || "New"}</strong>}</div>
                       </div>
                     ))
                   )}
@@ -1902,7 +1946,7 @@ export default function UnifiedControlCenterV3() {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                         <div>
                           <h3 className="uc-card-title" style={{ marginBottom: 4 }}>💬 Chat with {selectedChat.customerName || "Customer"}</h3>
-                          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>{selectedChat.userEmail || "Anonymous"} · Opened/updated {formatInboxDate(selectedChat.updatedAt || selectedChat.createdAt)}</div>
+                          <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>{selectedChat.userEmail || "Anonymous"} · Opened/updated {formatInboxDate(selectedChat.updatedAt || selectedChat.createdAt)} · <span style={{ color: "#4ade80", fontWeight: 700 }}>● Online thread</span></div>
                         </div>
                         <button onClick={() => loadChatMessages(selectedChat)} disabled={refreshingChat} aria-label="Refresh selected chat" style={{ border: "1px solid rgba(74,222,128,0.45)", background: "rgba(22,163,74,0.15)", color: "#86efac", borderRadius: 8, padding: "7px 10px", cursor: refreshingChat ? "wait" : "pointer", fontWeight: 700 }}>{refreshingChat ? "…" : "↻ Refresh"}</button>
                       </div>
