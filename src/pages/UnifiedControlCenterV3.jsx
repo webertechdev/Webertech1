@@ -2,7 +2,7 @@
 // WeberTech Control Center v3 - With Upload Progress & Fixed Hanging
 
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
@@ -730,6 +730,22 @@ export default function UnifiedControlCenterV3() {
     loadChatMessages(selectedChat);
   }, [selectedChat?.id]);
 
+  // Keep the selected support conversation live while the admin is viewing it.
+  // The stored message subcollection remains the single source of truth.
+  useEffect(() => {
+    if (!selectedChat) return undefined;
+    const unsubscribe = onSnapshot(collection(db, "chats", selectedChat.id, "messages"), snapshot => {
+      const msgs = snapshot.docs
+        .map(item => ({ id: item.id, ...item.data() }))
+        .sort((a, b) => (a.timestamp?.toMillis?.() || 0) - (b.timestamp?.toMillis?.() || 0));
+      setChatMessages(msgs);
+      requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }));
+    }, error => {
+      console.error("Live chat listener error:", error);
+    });
+    return () => unsubscribe();
+  }, [selectedChat?.id]);
+
   // Add a document from a public HTTPS PDF link. No Firebase Storage upload is
   // attempted, so this path remains free to operate on the Firestore plan.
 
@@ -1033,12 +1049,27 @@ export default function UnifiedControlCenterV3() {
     if (!selectedChat || chatModeSaving) return;
     setChatModeSaving(true);
     const adminTakeover = mode === "admin";
+    const wasAdmin = selectedChat.chatMode === "admin" || selectedChat.adminTakeover === true;
     try {
       await setDoc(doc(db, "chats", selectedChat.id), {
         chatMode: mode,
         adminTakeover,
         updatedAt: serverTimestamp(),
       }, { merge: true });
+
+      // Persist the notice inside the same chat so the customer sees it after
+      // login/reload, rather than relying on a temporary local banner.
+      if (adminTakeover && !wasAdmin) {
+        const eventRef = doc(collection(db, "chats", selectedChat.id, "messages"));
+        await setDoc(eventRef, {
+          sender: "system",
+          type: "agent_joined",
+          text: "Support agent joined this chat",
+          metadata: { event: "agent_joined" },
+          timestamp: serverTimestamp(),
+        });
+      }
+
       const updated = { ...selectedChat, chatMode: mode, adminTakeover };
       setSelectedChat(updated);
       setChats(prev => prev.map(chat => chat.id === updated.id ? updated : chat));
@@ -1084,6 +1115,18 @@ export default function UnifiedControlCenterV3() {
     setLoading(true);
 
     try {
+      const wasAdmin = selectedChat.chatMode === "admin" || selectedChat.adminTakeover === true;
+      if (!wasAdmin) {
+        const eventRef = doc(collection(db, "chats", selectedChat.id, "messages"));
+        await setDoc(eventRef, {
+          sender: "system",
+          type: "agent_joined",
+          text: "Support agent joined this chat",
+          metadata: { event: "agent_joined" },
+          timestamp: serverTimestamp(),
+        });
+      }
+
       const newMsgRef = doc(collection(db, "chats", selectedChat.id, "messages"));
 
       await setDoc(newMsgRef, {
@@ -1870,30 +1913,30 @@ export default function UnifiedControlCenterV3() {
                         <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>{(selectedChat.chatMode === "admin" || selectedChat.adminTakeover) ? "AI paused for this chat" : "AI answers by default"}</span>
                       </div>
                       <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 16, minHeight: 300, maxHeight: 400, overflowY: "auto", marginBottom: 16 }}>
-                        {chatMessages.map(msg => (
-                              <div
-                              key={msg.id}
-                            style={{
-                              marginBottom: 12,
-                              textAlign: msg.sender === "admin" ? "right" : "left",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "inline-block",
-                                maxWidth: "70%",
-                                padding: "10px 14px",
-                                borderRadius: 10,
-                                background: msg.sender === "admin" ? "#16a34a" : "rgba(22,163,74,0.2)",
-                                color: msg.sender === "admin" ? "#fff" : "rgba(255,255,255,0.8)",
-                                fontSize: 13,
-                              }}
-                            >
-                              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{msg.sender === "admin" ? "Admin Agent" : msg.sender === "ai" ? "WeberAI" : "Customer"} · {formatInboxDate(msg.timestamp)}</div>
-                              {msg.text}
+                        {chatMessages.length === 0 ? (
+                          <div style={{ color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "42px 12px", fontSize: 13 }}>No messages in this chat yet.</div>
+                        ) : chatMessages.map(msg => {
+                          const isSystem = msg.sender === "system" || msg.type === "agent_joined" || msg.metadata?.event === "agent_joined";
+                          const isAdmin = msg.sender === "admin";
+                          const senderLabel = isAdmin ? "Admin Agent" : msg.sender === "ai" ? "WeberAI" : isSystem ? "Chat update" : "Customer";
+                          if (isSystem) {
+                            return (
+                              <div key={msg.id} style={{ margin: "12px auto", maxWidth: "88%", padding: "9px 12px", borderRadius: 9, background: "rgba(134,239,172,0.12)", border: "1px solid rgba(134,239,172,0.4)", color: "#bbf7d0", textAlign: "center", fontSize: 12, fontWeight: 800 }}>
+                                <div>{msg.text || "Support agent joined this chat"}</div>
+                                <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontWeight: 500, marginTop: 4 }}>{formatInboxDate(msg.timestamp)}</div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: isAdmin ? "flex-end" : "flex-start", marginBottom: 16 }}>
+                              <div style={{ color: isAdmin ? "#fbbf24" : msg.sender === "ai" ? "#86efac" : "#93c5fd", fontSize: 11, fontWeight: 800, margin: "0 5px 5px" }}>{senderLabel}</div>
+                              <div style={{ maxWidth: "78%", padding: "11px 14px", borderRadius: isAdmin ? "12px 12px 3px 12px" : "12px 12px 12px 3px", background: isAdmin ? "#16a34a" : msg.sender === "ai" ? "rgba(22,163,74,0.2)" : "rgba(59,130,246,0.2)", border: isAdmin ? "1px solid rgba(134,239,172,0.45)" : msg.sender === "ai" ? "1px solid rgba(134,239,172,0.25)" : "1px solid rgba(147,197,253,0.28)", color: "#fff", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                                {typeof msg.text === "string" ? msg.text : ""}
+                              </div>
+                              <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 10, margin: "4px 5px 0" }}>{formatInboxDate(msg.timestamp)}</div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                         <div ref={chatEndRef} />
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>

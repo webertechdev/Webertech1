@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, serverTimestamp,
-  doc, setDoc, getDoc, getDocs, query, orderBy
+  doc, setDoc, getDoc, getDocs, query, orderBy, where, onSnapshot
 } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
@@ -36,13 +36,56 @@ const GREETING = {
   sw: "👋 Jambo! Mimi ni WeberAI, msaidizi wako wa WeberTech.\nNaweza kukusaidia kupata huduma sahihi, kufungua ukurasa unaofaa, na kufuata hatua zinazofuata. Nikusaidie nini leo?",
 };
 
-function getSessionId(userId) {
-  const key = `wt_chat_session_${userId}`;
-  let id = sessionStorage.getItem(key);
-  if (!id) {
-    id = "sess_" + userId + "_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-    sessionStorage.setItem(key, id);
+async function resolvePersistentChatId(user) {
+  if (!user?.uid) return null;
+
+  const localKey = `wt_chat_id_${user.uid}`;
+  const sessionKey = `wt_chat_session_${user.uid}`;
+  const rememberedIds = [
+    localStorage.getItem(localKey),
+    sessionStorage.getItem(sessionKey),
+  ].filter(Boolean);
+
+  // Reuse a remembered chat when it still exists. This preserves conversations
+  // across reloads and across the login redirect used by the customer profile.
+  for (const id of rememberedIds) {
+    try {
+      const existing = await getDoc(doc(db, "chats", id));
+      if (existing.exists() && existing.data()?.userId === user.uid) {
+        localStorage.setItem(localKey, id);
+        sessionStorage.setItem(sessionKey, id);
+        return id;
+      }
+    } catch (error) {
+      console.warn("Could not inspect remembered chat:", error);
+    }
   }
+
+  // Recover the newest older session created by this same authenticated user.
+  // The query uses only one field so it does not require a composite index.
+  try {
+    const snap = await getDocs(query(collection(db, "chats"), where("userId", "==", user.uid)));
+    const recovered = snap.docs
+      .map(item => ({ id: item.id, ...item.data() }))
+      .sort((a, b) => {
+        const aTime = a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
+        const bTime = b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
+        return bTime - aTime;
+      })[0];
+    if (recovered?.id) {
+      localStorage.setItem(localKey, recovered.id);
+      sessionStorage.setItem(sessionKey, recovered.id);
+      return recovered.id;
+    }
+  } catch (error) {
+    console.warn("Could not recover previous chats:", error);
+  }
+
+  // A deterministic ID means a newly started conversation is also stable even
+  // before the first message is written.
+  const id = `user_${user.uid}`;
+  localStorage.setItem(localKey, id);
+  sessionStorage.setItem(sessionKey, id);
   return id;
 }
 
@@ -64,8 +107,13 @@ const CSS = `
   .wt-msgs::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
   .wt-bub { max-width: 86%; padding: 10px 13px; border-radius: 15px; font-size: 13.5px; line-height: 1.55; word-break: break-word; animation: wtmsgin .2s ease both; }
   @keyframes wtmsgin { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-  .wt-ai   { background:#fff; border:1.5px solid #e5e7eb; align-self:flex-start; border-bottom-left-radius:3px; }
+  .wt-ai   { background:#fff; border:1.5px solid #e5e7eb; align-self:flex-start; border-bottom-left-radius:3px; color:#1f2937; }
   .wt-user { background:#16a34a; color:#fff; align-self:flex-end; border-bottom-right-radius:3px; }
+  .wt-agent { background:#fff7ed; border:1.5px solid #f59e0b; align-self:flex-start; border-bottom-left-radius:3px; color:#7c2d12; }
+  .wt-system { align-self:center; width:100%; box-sizing:border-box; padding:8px 10px; border-radius:9px; background:#ecfdf5; border:1px solid #86efac; color:#166534; text-align:center; font-size:12px; font-weight:700; }
+  .wt-label { font-size:10px; font-weight:800; color:#6b7280; margin:0 4px 4px; letter-spacing:.02em; }
+  .wt-status { padding:8px 13px; background:#fffbeb; border-bottom:1px solid #fde68a; color:#92400e; font-size:11px; font-weight:700; text-align:center; flex-shrink:0; }
+  .wt-time { margin:4px 4px 0; color:#9ca3af; font-size:10px; line-height:1.2; }
   .wt-err  { background:#fef2f2; border:1.5px solid #fca5a5; align-self:flex-start; }
   .wt-typing { display: flex; gap: 4px; padding: 10px 13px; background: #fff; border: 1.5px solid #e5e7eb; border-radius: 15px; border-bottom-left-radius: 3px; align-self: flex-start; align-items: center; }
   .wt-typing span { width: 6px; height: 6px; border-radius: 50%; background: #9ca3af; animation: wtbounce .9s ease-in-out infinite; }
@@ -130,6 +178,7 @@ export default function ChatWidgetEnhanced() {
   const [loading,   setLoading]   = useState(false);
   const [unread,    setUnread]    = useState(true);
   const [sessionId, setSessionId] = useState(null);
+  const [chatMode, setChatMode] = useState("ai");
   const [currentUser, setCurrentUser] = useState(null);
   const [authMode,    setAuthMode]    = useState("login"); // "login" | "register"
   const [authEmail,   setAuthEmail]   = useState("");
@@ -160,11 +209,12 @@ export default function ChatWidgetEnhanced() {
     try {
       const snap = await getDocs(query(collection(db, "chats", sid, "messages"), orderBy("timestamp", "asc")));
       const newMsgs = snap.docs.map(d => ({
-        role: d.data().sender === "user" ? "user" : "ai",
+        role: d.data().sender === "user" ? "user" : d.data().sender === "admin" ? "admin" : d.data().sender === "system" ? "system" : "ai",
         text: typeof d.data().text === "string" ? d.data().text : "",
         time: d.data().timestamp?.toDate?.().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || tstamp(),
         id: d.id,
-        pdfData: d.data().metadata?.pdfData
+        pdfData: d.data().metadata?.pdfData,
+        metadata: d.data().metadata || {}
       }));
       setMsgs([greeting, ...newMsgs]);
     } catch (err) {
@@ -176,15 +226,49 @@ export default function ChatWidgetEnhanced() {
   };
 
   useEffect(() => {
+    let cancelled = false;
     if (!currentUser) {
       setSessionId(null);
       setMsgs([]);
-      return;
+      setChatMode("ai");
+      return () => { cancelled = true; };
     }
-    const sid = getSessionId(currentUser.uid);
-    setSessionId(sid);
-    loadMessages(sid, lang);
+
+    setSessionId(null);
+    resolvePersistentChatId(currentUser).then(sid => {
+      if (cancelled) return;
+      setSessionId(sid);
+      loadMessages(sid, lang);
+    });
+
+    return () => { cancelled = true; };
   }, [lang, currentUser?.uid]);
+
+  // Keep the side chat synchronized with customer/admin replies and takeover
+  // events, so the customer does not have to start over after a reload.
+  useEffect(() => {
+    if (!sessionId || !currentUser) return undefined;
+    const chatUnsubscribe = onSnapshot(doc(db, "chats", sessionId), snap => {
+      const data = snap.exists() ? snap.data() : {};
+      setChatMode(data.chatMode === "admin" || data.adminTakeover ? "admin" : "ai");
+    }, error => console.warn("Chat status listener failed:", error));
+    const messagesUnsubscribe = onSnapshot(query(collection(db, "chats", sessionId, "messages"), orderBy("timestamp", "asc")), snap => {
+      const greeting = { role:"ai", text:GREETING[lang], time:tstamp(), id:"greeting" };
+      const newMsgs = snap.docs.map(d => ({
+        role: d.data().sender === "user" ? "user" : d.data().sender === "admin" ? "admin" : d.data().sender === "system" ? "system" : "ai",
+        text: typeof d.data().text === "string" ? d.data().text : "",
+        time: d.data().timestamp?.toDate?.().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }) || tstamp(),
+        id: d.id,
+        pdfData: d.data().metadata?.pdfData,
+        metadata: d.data().metadata || {}
+      }));
+      setMsgs([greeting, ...newMsgs]);
+    }, error => console.warn("Chat message listener failed:", error));
+    return () => {
+      chatUnsubscribe();
+      messagesUnsubscribe();
+    };
+  }, [sessionId, currentUser?.uid, lang]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior:"smooth" });
@@ -320,6 +404,8 @@ export default function ChatWidgetEnhanced() {
   };
 
   const showChips = msgs.length <= 1 && !loading;
+  const hasPersistedAgentJoin = msgs.some(message => message.role === "system" && message.metadata?.event === "agent_joined");
+  const showAgentStatus = chatMode === "admin" && !hasPersistedAgentJoin;
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -438,20 +524,35 @@ export default function ChatWidgetEnhanced() {
             </div>
           ) : (
             <>
+              {showAgentStatus && <div className="wt-status">👤 Support agent joined this chat. You can now send a message directly to WeberTech.</div>}
               <div className="wt-msgs">
-                {msgs.filter(m => m && m.text).map(m => (
-                  <div key={m.id} style={{ display:"flex", flexDirection:"column", alignItems: m.role==="user" ? "flex-end" : "flex-start" }}>
-                    <div className={`wt-bub ${m.role==="user" ? "wt-user" : "wt-ai"}`}>
-                      {(m.text || "").split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{renderMessageLine(line, i)}</p>)}
-                      {m.pdfData && (
-                        <button className="wt-pdf-btn" onClick={() => handleGeneratePDF(m.pdfData)}>
-                          📄 Download {m.pdfData.type} PDF
-                        </button>
-                      )}
+                {msgs.filter(m => m && m.text).map(m => {
+                  const isUser = m.role === "user";
+                  const isSystem = m.role === "system";
+                  const label = isUser ? "You" : m.role === "admin" ? "Support Agent" : m.role === "system" ? "Chat update" : "WeberAI";
+                  if (isSystem) {
+                    return (
+                      <div key={m.id} className="wt-system">
+                        <div>{m.text}</div>
+                        <div className="wt-time" style={{ textAlign: "center" }}>{m.time}</div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={m.id} style={{ display:"flex", flexDirection:"column", alignItems: isUser ? "flex-end" : "flex-start", width:"100%" }}>
+                      <div className="wt-label">{label}</div>
+                      <div className={`wt-bub ${isUser ? "wt-user" : m.role === "admin" ? "wt-agent" : "wt-ai"}`}>
+                        {(m.text || "").split("\n").map((line, i) => <p key={i} style={{ margin: i > 0 ? "4px 0 0" : 0 }}>{renderMessageLine(line, i)}</p>)}
+                        {m.pdfData && (
+                          <button className="wt-pdf-btn" onClick={() => handleGeneratePDF(m.pdfData)}>
+                            📄 Download {m.pdfData.type} PDF
+                          </button>
+                        )}
+                      </div>
+                      <div className="wt-time" style={{ textAlign: isUser ? "right" : "left" }}>{m.time}</div>
                     </div>
-                    <div className="wt-time" style={{ textAlign: m.role==="user" ? "right" : "left" }}>{m.time}</div>
-                  </div>
-                ))}
+                  );
+                })}
                 {loading && <div className="wt-typing"><span/><span/><span/></div>}
                 <div ref={bottomRef} />
               </div>
@@ -467,13 +568,13 @@ export default function ChatWidgetEnhanced() {
                   ref={inputRef}
                   className="wt-input"
                   rows={1}
-                  placeholder="Ask WeberAI anything..."
+                  placeholder={!sessionId ? "Restoring your chat history..." : chatMode === "admin" ? "Message the Support Agent..." : "Ask WeberAI anything..."}
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKey}
-                  disabled={loading}
+                  disabled={loading || !sessionId}
                 />
-                <button className="wt-send" onClick={() => send()} disabled={loading || !input.trim()}>
+                <button className="wt-send" onClick={() => send()} disabled={loading || !sessionId || !input.trim()}>
                   {loading ? <span className="wt-spin">⟳</span> : "➤"}
                 </button>
               </div>
