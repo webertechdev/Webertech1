@@ -3,8 +3,6 @@
 // for documents whose original file is not yet available or is an editable Word file.
 
 import { useState, useEffect } from "react";
-import { storage } from "../config/firebase";
-import { ref, getBytes } from "firebase/storage";
 import * as pdfjsLib from "pdfjs-dist";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -83,8 +81,8 @@ export default function DocumentPreview({
       const source = asText(fileName) || asText(fileUrl) || "document";
       const ext = source.toLowerCase().split(".").pop()?.split("?")[0];
 
-      // There is no public file yet, or the source is an editable format that
-      // browsers cannot render safely. Show a branded watermarked cover instead.
+      // Customer pages receive only a protected preview endpoint. If a product
+      // is missing that endpoint, show the branded cover instead of a source URL.
       if (!asText(fileUrl) || ["doc", "docx", "xls", "xlsx", "ppt", "pptx"].includes(ext)) {
         finishWithFallback();
         setLoading(false);
@@ -94,12 +92,15 @@ export default function DocumentPreview({
       try {
         if (ext === "pdf") {
           let data;
-          if (asText(fileUrl).startsWith("http")) {
-            const response = await fetch(fileUrl);
-            if (!response.ok) throw new Error(`Preview request failed (${response.status})`);
-            data = new Uint8Array(await response.arrayBuffer());
-          } else {
-            data = await getBytes(ref(storage, fileUrl));
+          const response = await fetch(fileUrl, { credentials: "omit" });
+          if (!response.ok) throw new Error(`Preview request failed (${response.status})`);
+          const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+          data = new Uint8Array(await response.arrayBuffer());
+
+          if (contentType.startsWith("image/")) {
+            objectUrl = URL.createObjectURL(new Blob([data], { type: contentType }));
+            if (!cancelled) setPreviewUrl(objectUrl);
+            return;
           }
 
           const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -113,14 +114,7 @@ export default function DocumentPreview({
           if (watermark) addWatermark(context, canvas.width, canvas.height);
           if (!cancelled) setPreviewUrl(canvas.toDataURL("image/png"));
         } else if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) {
-          let url;
-          if (asText(fileUrl).startsWith("http")) {
-            url = fileUrl;
-          } else {
-            const bytes = await getBytes(ref(storage, fileUrl));
-            objectUrl = URL.createObjectURL(new Blob([bytes]));
-            url = objectUrl;
-          }
+          const url = fileUrl;
 
           await new Promise((resolve, reject) => {
             const img = new Image();
@@ -169,7 +163,13 @@ export default function DocumentPreview({
   return (
     <div style={frameStyle}>
       {previewUrl ? (
-        <img src={previewUrl} alt={`${title} watermarked preview`} style={{ width: "100%", height: "auto", display: "block" }} />
+          <img
+            src={previewUrl}
+            alt={`${title} watermarked preview`}
+            draggable="false"
+            onContextMenu={event => event.preventDefault()}
+            style={{ width: "100%", height: "auto", display: "block", userSelect: "none", WebkitUserDrag: "none" }}
+          />
       ) : (
         <div style={{ padding: 36, textAlign: "center", color: "#6b7280" }}>Preview unavailable</div>
       )}
