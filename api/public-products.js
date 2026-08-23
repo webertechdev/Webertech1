@@ -90,19 +90,30 @@ async function renderFirstPage(buffer) {
     "pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf"
   );
   const standardFontDataDir = dirname(standardFontDataPath);
-  const boldFontDataPath = require.resolve(
-    "pdfjs-dist/standard_fonts/LiberationSans-Bold.ttf"
-  );
-  if (!GlobalFonts.families.some(({ family }) => family === "Liberation Sans")) {
-    GlobalFonts.registerFromPath(standardFontDataPath, "Liberation Sans");
-    GlobalFonts.registerFromPath(boldFontDataPath, "Liberation Sans");
+  const bundledFonts = [
+    ["Liberation Sans", standardFontDataPath],
+    ["Arial", standardFontDataPath],
+    ["ArialMT", standardFontDataPath],
+    [
+      "Arial-BoldMT",
+      require.resolve("pdfjs-dist/standard_fonts/LiberationSans-Bold.ttf"),
+    ],
+    [
+      "Arial-ItalicMT",
+      require.resolve("pdfjs-dist/standard_fonts/LiberationSans-Italic.ttf"),
+    ],
+  ];
+  for (const [family, fontPath] of bundledFonts) {
+    if (!GlobalFonts.families.some(({ family: loadedFamily }) => loadedFamily === family)) {
+      GlobalFonts.registerFromPath(fontPath, family);
+    }
   }
   const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(buffer),
     disableWorker: true,
     disableFontFace: false,
-    useSystemFonts: false,
-    standardFontDataUrl: standardFontDataDir,
+    useSystemFonts: true,
+    standardFontDataUrl: `${standardFontDataDir}/`,
     StandardFontDataFactory: LocalStandardFontDataFactory,
   }).promise;
   const page = await pdf.getPage(1);
