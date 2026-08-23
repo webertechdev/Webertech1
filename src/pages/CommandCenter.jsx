@@ -261,6 +261,7 @@ export default function CommandCenter() {
   const [contactMessage, setContactMessage] = useState("");
   const [contactBusy, setContactBusy] = useState(false);
   const [draftBusy, setDraftBusy] = useState(false);
+  const [focusedRequestKey, setFocusedRequestKey] = useState("");
 
   const refreshData = async () => {
     setLoading(true);
@@ -386,7 +387,7 @@ export default function CommandCenter() {
         const opened = window.open(url, "_blank", "noopener,noreferrer");
         if (!opened) window.location.href = url;
       }
-      if (request.sourceCollection && request.id) await updateDoc(doc(db, request.sourceCollection, request.id), { status: "contacted", adminUnread: false, contactedAt: serverTimestamp(), contactedBy: auth.currentUser?.uid || "admin" });
+      if (request.sourceCollection && request.id) await updateDoc(doc(db, request.sourceCollection, request.id), { status: "contacted", priority: "normal", adminUnread: false, contactedAt: serverTimestamp(), contactedBy: auth.currentUser?.uid || "admin", priorityClearedAt: serverTimestamp(), priorityClearedBy: auth.currentUser?.uid || "admin" });
       await writeAdminLog(`${contactChannel}_request_contacted`, request.id, { sourceCollection: request.sourceCollection, recipient: contactChannel === "email" ? email : rawPhone, service: request.service || request.productTitle || request.title });
       toast.success(contactChannel === "email" ? "Email sent directly and request marked contacted." : "WhatsApp message prepared and request marked contacted.");
       setContactModal(null);
@@ -395,6 +396,36 @@ export default function CommandCenter() {
       toast.error(error.message || "The message could not be sent.");
     } finally {
       setContactBusy(false);
+    }
+  };
+
+  const openPriorityRequest = (request) => {
+    if (!request) return;
+    const key = `${request.sourceCollection}-${request.id}`;
+    setActiveView("requests");
+    setSearch("");
+    setFocusedRequestKey(key);
+    window.setTimeout(() => document.getElementById(`request-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  };
+
+  const updateRequestStatus = async (request, status) => {
+    if (!request?.sourceCollection || !request?.id) return;
+    try {
+      const resolved = ["solved", "resolved", "closed"].includes(String(status).toLowerCase());
+      await updateDoc(doc(db, request.sourceCollection, request.id), {
+        status,
+        priority: "normal",
+        adminUnread: false,
+        ...(resolved ? { solvedAt: serverTimestamp(), solvedBy: auth.currentUser?.uid || "admin" } : { contactedAt: serverTimestamp(), contactedBy: auth.currentUser?.uid || "admin" }),
+        priorityClearedAt: serverTimestamp(),
+        priorityClearedBy: auth.currentUser?.uid || "admin",
+      });
+      await writeAdminLog(`request_${status}`, request.id, { sourceCollection: request.sourceCollection, service: request.service || request.productTitle || request.title });
+      toast.success(`Request marked ${status}.`);
+      setFocusedRequestKey("");
+      await refreshData();
+    } catch (error) {
+      toast.error("Could not update this request.");
     }
   };
 
@@ -629,8 +660,8 @@ export default function CommandCenter() {
           <main className="cmd-main">
             {unreadPurchaseRequests.length > 0 && (
               <section className="cmd-card" style={{ borderColor: "rgba(251,191,36,.6)", background: "rgba(120,53,15,.22)" }}>
-                <div className="cmd-card-header"><div><h2 className="cmd-card-title">🔔 Checkout follow-ups ({unreadPurchaseRequests.length})</h2><p className="cmd-card-subtitle">Priority purchase outcomes requiring customer care. They are sorted above older inbox records.</p></div><button style={commonButton} onClick={() => { setActiveView("logs"); setSearch(""); }}>Open priority requests</button></div>
-                <div style={{ display: "grid", gap: 8 }}>{unreadPurchaseRequests.slice(0, 3).map(request => <div key={`${request.sourceCollection}-${request.id}`} style={{ padding: 10, borderRadius: 9, background: "rgba(15,23,42,.35)" }}><strong>{request.title || request.requestType || "Checkout request"}</strong><div style={{ fontSize: 12, marginTop: 3 }}>{displayName(request)} · {request.service || request.productTitle || "WeberTech service"} · {request.customerPhone || request.phone || request.customerEmail || request.email || "No contact"}</div></div>)}</div>
+                <div className="cmd-card-header"><div><h2 className="cmd-card-title">🔔 Checkout follow-ups ({unreadPurchaseRequests.length})</h2><p className="cmd-card-subtitle">Priority purchase outcomes requiring customer care. They are sorted above older inbox records.</p></div><button style={commonButton} onClick={() => openPriorityRequest(unreadPurchaseRequests[0])}>Open priority requests</button></div>
+                <div style={{ display: "grid", gap: 8 }}>{unreadPurchaseRequests.slice(0, 3).map(request => { const key = `${request.sourceCollection}-${request.id}`; return <button type="button" key={key} onClick={() => openPriorityRequest(request)} style={{ padding: 10, borderRadius: 9, background: "rgba(15,23,42,.35)", border: "1px solid rgba(251,191,36,.35)", color: "#fff", textAlign: "left", cursor: "pointer" }}><strong>{request.title || request.requestType || "Checkout request"}</strong><div style={{ fontSize: 12, marginTop: 3 }}>{displayName(request)} · {request.service || request.productTitle || "WeberTech service"} · {request.customerPhone || request.phone || request.customerEmail || request.email || "No contact"}</div></button>; })}</div>
               </section>
             )}
             {(activeView === "overview" || activeView === "orders") && (
@@ -736,7 +767,7 @@ export default function CommandCenter() {
             {activeView === "requests" && (
               <>
                 <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Customer activity and generated reports</h2><p className="cmd-card-subtitle">Read-only operational history from activities and reports, loaded on refresh.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-activity-report.csv", [...activities.map(activity => ({ source: "activity", id: activity.id, userId: activity.userId, type: activity.type, description: activity.description, timestamp: formatDate(activity.timestamp) })), ...reports.map(report => ({ source: "report", id: report.id, type: report.type || report.title, description: report.message || report.summary, timestamp: formatDate(report.date || report.createdAt) }))])}>⬇ Export logs</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Source</th><th>Record</th><th>Customer / owner</th><th>Description</th><th>When</th></tr></thead><tbody>{[...activities.map(activity => ({ source: "Activity", id: activity.id, owner: activity.userId, description: activity.description || activity.type, date: activity.timestamp })), ...reports.map(report => ({ source: "Report", id: report.id, owner: report.createdBy || "System", description: report.message || report.summary || report.title || "Generated platform report", date: report.date || report.createdAt }))].sort((a, b) => (toDate(b.date)?.getTime() || 0) - (toDate(a.date)?.getTime() || 0)).slice(0, 80).map(record => <tr key={`${record.source}-${record.id}`}><td>{record.source}</td><td style={{ fontFamily: "monospace", fontSize: 11 }}>{record.id}</td><td>{record.owner || "—"}</td><td>{record.description}</td><td>{formatDate(record.date)}</td></tr>)}{!activities.length && !reports.length && <tr><td colSpan="5"><div className="cmd-empty">No activity or report records found.</div></td></tr>}</tbody></table></div></section>
-                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Inbound requests ({allRequests.length}) {unreadPurchaseRequests.length ? <span style={{ color: "#fbbf24" }}>· {unreadPurchaseRequests.length} priority</span> : null}</h2><p className="cmd-card-subtitle">Checkout outcomes, waitlists, and service inquiries across all WeberTech divisions. Priority checkout follow-ups appear first.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-inbound-requests.csv", allRequests.map(request => ({ type: request.requestType, source: request.sourceCollection, name: displayName(request), email: request.email || request.customerEmail, phone: request.phone || request.customerPhone, message: request.message || request.summary, status: request.status, received: formatDate(request.createdAt || request.timestamp) })))}>⬇ Export requests</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Type</th><th>Customer</th><th>Contact</th><th>Message</th><th>Status</th><th>Received</th><th>Contact</th></tr></thead><tbody>{allRequests.slice(0, 100).map(request => <tr key={`${request.sourceCollection}-${request.id}`}><td>{request.requestType}</td><td>{displayName(request)}<div style={{ color: "rgba(255,255,255,.5)", fontSize: 10 }}>{request.service || request.productTitle || ""}</div></td><td>{request.email || request.customerEmail || "—"}<br />{request.phone || request.customerPhone || "—"}</td><td>{request.message || request.summary || "No message supplied"}</td><td><span className={`cmd-badge cmd-badge-${request.priority === "high" ? "pending" : normalizeStatus(request.status || "new")}`}>{request.priority === "high" ? "Priority" : request.status || "New"}</span></td><td>{formatDate(request.createdAt || request.timestamp)}</td><td style={{ whiteSpace: "nowrap", display: "flex", gap: 6, flexWrap: "wrap" }}>{(request.phone || request.customerPhone) ? <button style={commonButton} onClick={() => openRequestComposer(request, "whatsapp")}>WhatsApp</button> : null} {(request.email || request.customerEmail) ? <button style={commonButton} onClick={() => openRequestComposer(request, "email")}>Email</button> : null}</td></tr>)}{!allRequests.length && <tr><td colSpan="7"><div className="cmd-empty">No inbound requests found.</div></td></tr>}</tbody></table></div></section>
+                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Inbound requests ({allRequests.length}) {unreadPurchaseRequests.length ? <span style={{ color: "#fbbf24" }}>· {unreadPurchaseRequests.length} priority</span> : null}</h2><p className="cmd-card-subtitle">Checkout outcomes, waitlists, and service inquiries across all WeberTech divisions. Priority checkout follow-ups appear first.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-inbound-requests.csv", allRequests.map(request => ({ type: request.requestType, source: request.sourceCollection, name: displayName(request), email: request.email || request.customerEmail, phone: request.phone || request.customerPhone, message: request.message || request.summary, status: request.status, received: formatDate(request.createdAt || request.timestamp) })))}>⬇ Export requests</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Type</th><th>Customer</th><th>Contact</th><th>Message</th><th>Status</th><th>Received</th><th>Contact</th></tr></thead><tbody>{allRequests.slice(0, 100).map(request => <tr id={`request-${request.sourceCollection}-${request.id}`} key={`${request.sourceCollection}-${request.id}`} onClick={() => setFocusedRequestKey(`${request.sourceCollection}-${request.id}`)} style={{ background: focusedRequestKey === `${request.sourceCollection}-${request.id}` ? "rgba(251,191,36,.16)" : undefined, outline: focusedRequestKey === `${request.sourceCollection}-${request.id}` ? "2px solid rgba(251,191,36,.7)" : undefined }}><td>{request.requestType}</td><td>{displayName(request)}<div style={{ color: "rgba(255,255,255,.5)", fontSize: 10 }}>{request.service || request.productTitle || ""}</div></td><td>{request.email || request.customerEmail || "—"}<br />{request.phone || request.customerPhone || "—"}</td><td>{request.message || request.summary || "No message supplied"}</td><td><span className={`cmd-badge cmd-badge-${request.priority === "high" ? "pending" : normalizeStatus(request.status || "new")}`}>{request.priority === "high" ? "Priority" : request.status || "New"}</span></td><td>{formatDate(request.createdAt || request.timestamp)}</td><td style={{ whiteSpace: "nowrap", display: "flex", gap: 6, flexWrap: "wrap" }}>{(request.phone || request.customerPhone) ? <button style={commonButton} onClick={() => openRequestComposer(request, "whatsapp")}>WhatsApp</button> : null} {(request.email || request.customerEmail) ? <button style={commonButton} onClick={() => openRequestComposer(request, "email")}>Email</button> : null} <button style={commonButton} onClick={() => updateRequestStatus(request, "contacted")}>Contacted</button> <button style={commonButton} onClick={() => updateRequestStatus(request, "solved")}>Solved</button></td></tr>)}{!allRequests.length && <tr><td colSpan="7"><div className="cmd-empty">No inbound requests found.</div></td></tr>}</tbody></table></div></section>
               </>
             )}
             {contactModal && (
