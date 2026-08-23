@@ -1,5 +1,21 @@
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { getDb } from "./_lib/firebaseAdmin.js";
 import { fetchRemotePdf, getDocumentSource, getFileName } from "./_lib/documentLinks.js";
+
+const require = createRequire(import.meta.url);
+
+class LocalStandardFontDataFactory {
+  constructor({ baseUrl }) {
+    this.baseUrl = baseUrl;
+  }
+
+  async fetch({ filename }) {
+    return new Uint8Array(await readFile(join(this.baseUrl, filename)));
+  }
+}
 
 function getQuery(req, key) {
   const value = req.query?.[key];
@@ -67,10 +83,22 @@ async function renderFirstPage(buffer) {
     import("@napi-rs/canvas"),
     import("pdfjs-dist/legacy/build/pdf.mjs"),
   ]);
+  // Vercel does not always infer PDF.js's worker asset from the dynamic import.
+  // Resolve the worker from the packaged dependency explicitly, then include it
+  // in vercel.json so PDF.js can load it in the serverless runtime.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(
+    require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")
+  ).href;
+  const standardFontDataDir = dirname(
+    require.resolve("pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf")
+  );
   const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(buffer),
     disableWorker: true,
-    useSystemFonts: true,
+    disableFontFace: false,
+    useSystemFonts: false,
+    standardFontDataUrl: standardFontDataDir,
+    StandardFontDataFactory: LocalStandardFontDataFactory,
   }).promise;
   const page = await pdf.getPage(1);
   const viewport = page.getViewport({ scale: 1.35 });
