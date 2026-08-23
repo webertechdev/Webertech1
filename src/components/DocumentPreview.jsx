@@ -78,19 +78,24 @@ export default function DocumentPreview({
     const generatePreview = async () => {
       setLoading(true);
       setPreviewUrl(null);
-      const source = asText(fileName) || asText(fileUrl) || "document";
-      const ext = source.toLowerCase().split(".").pop()?.split("?")[0];
+      const rawUrl = asText(fileUrl);
+      const isProtectedPreview = /\/api\/document-preview(?:[/?]|$)/i.test(rawUrl);
+      const source = asText(fileName) || rawUrl || "document";
+      const ext = isProtectedPreview
+        ? "png"
+        : source.toLowerCase().split(".").pop()?.split("?")[0];
 
-      // Customer pages receive only a protected preview endpoint. If a product
-      // is missing that endpoint, show the branded cover instead of a source URL.
-      if (!asText(fileUrl) || ["doc", "docx", "xls", "xlsx", "ppt", "pptx"].includes(ext)) {
+      // Customer pages receive a server-rendered, watermarked preview endpoint.
+      // Do not infer its type from fileName: hosted records may use labels such
+      // as "Hosted PDF document" rather than a filename ending in .pdf.
+      if (!rawUrl || (!isProtectedPreview && ["doc", "docx", "xls", "xlsx", "ppt", "pptx"].includes(ext))) {
         finishWithFallback();
         setLoading(false);
         return;
       }
 
       try {
-        if (ext === "pdf") {
+        if (isProtectedPreview || ext === "pdf") {
           let data;
           const response = await fetch(fileUrl, { credentials: "omit" });
           if (!response.ok) throw new Error(`Preview request failed (${response.status})`);
