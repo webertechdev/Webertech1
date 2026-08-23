@@ -1,5 +1,4 @@
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { getDb } from "./_lib/firebaseAdmin.js";
@@ -83,12 +82,6 @@ async function renderFirstPage(buffer) {
     import("@napi-rs/canvas"),
     import("pdfjs-dist/legacy/build/pdf.mjs"),
   ]);
-  // Vercel does not always infer PDF.js's worker asset from the dynamic import.
-  // Resolve the worker from the packaged dependency explicitly, then include it
-  // in vercel.json so PDF.js can load it in the serverless runtime.
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(
-    require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")
-  ).href;
   const standardFontDataDir = dirname(
     require.resolve("pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf")
   );
