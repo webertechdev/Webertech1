@@ -27,7 +27,17 @@ const MODULES = [
   { id: "hustle", icon: "🤑", name: "Hustle KE", color: "#ec4899" },
 ];
 
+const SUPPORT_STAGES = [
+  { id: "received", label: "Received", description: "We received your support request." },
+  { id: "under_review", label: "Under review", description: "A support agent is reviewing the request." },
+  { id: "in_progress", label: "In progress", description: "Our team is actively working on a solution." },
+  { id: "waiting_customer", label: "Waiting for you", description: "We need information or confirmation from you." },
+  { id: "resolved", label: "Resolved", description: "The requested support has been completed." },
+  { id: "closed", label: "Closed", description: "This support ticket has been closed." },
+];
+const SUPPORT_STAGE_IDS = SUPPORT_STAGES.map(stage => stage.id);
 const REQUEST_COLLECTIONS = [
+  { id: "purchase_requests", label: "Checkout follow-ups" },
   { id: "academy_waitlist", label: "Academy waitlist" },
   { id: "electronics_notify", label: "Electronics requests" },
   { id: "dev_inquiries", label: "Dev inquiries" },
@@ -273,7 +283,7 @@ export default function CommandCenter() {
       setSystemHealth("🟢 All Systems Operational");
       setLastRefresh(new Date());
       setLastRefreshBy(auth.currentUser?.email || auth.currentUser?.uid || "Administrator");
-      void writeAdminLog("read_command_center", "command-center", { collections: ["orders", "transactions", "payments", "users", "chats", "activities", "adminLogs", "reports", "downloads", "services", "invoices", "notifications", "supportTickets", "referrals", "referralEarnings", "products"], recordCounts: { orders: allOrders.length, transactions: paymentLedger.length, payments: allPayments.length, users: allUsers.length, chats: allChats.length } });
+      void writeAdminLog("read_command_center", "command-center", { collections: ["orders", "transactions", "payments", "users", "chats", "activities", "adminLogs", "reports", "downloads", "services", "invoices", "notifications", "supportTickets", "purchase_requests", "referrals", "referralEarnings", "products"], recordCounts: { orders: allOrders.length, transactions: paymentLedger.length, payments: allPayments.length, users: allUsers.length, chats: allChats.length } });
       toast.success("All Command Center data recalculated.");
     } catch (error) {
       console.error("Refresh error:", error);
@@ -306,6 +316,31 @@ export default function CommandCenter() {
     }
   };
 
+  const handleSupportTicketUpdate = async (ticket, stage) => {
+    const stageInfo = SUPPORT_STAGES.find(item => item.id === stage) || SUPPORT_STAGES[0];
+    const currentUser = auth.currentUser;
+    if (!currentUser || !ticket?.id) return;
+    try {
+      const history = Array.isArray(ticket.stageHistory) ? ticket.stageHistory : [];
+      await updateDoc(doc(db, "supportTickets", ticket.id), {
+        stage,
+        status: stage === "resolved" || stage === "closed" ? stage : "open",
+        stageLabel: stageInfo.label,
+        stageHistory: [...history, { stage, label: stageInfo.label, note: stageInfo.description, updatedBy: currentUser.uid, updatedAt: new Date().toISOString() }],
+        updatedAt: serverTimestamp(),
+        lastUpdatedBy: currentUser.uid,
+      });
+      if (ticket.customerId || ticket.userId) {
+        await addDoc(collection(db, "notifications"), { userId: ticket.customerId || ticket.userId, type: "support_ticket_update", ticketId: ticket.id, title: `Support ticket ${stageInfo.label}`, message: `${ticket.subject || "Your support request"}: ${stageInfo.description}`, read: false, createdAt: serverTimestamp(), actionUrl: "/dashboard?tab=support" });
+      }
+      await writeAdminLog("support_ticket_stage_updated", ticket.id, { stage, stageLabel: stageInfo.label, customerId: ticket.customerId || ticket.userId });
+      toast.success(`Ticket moved to ${stageInfo.label}.`);
+      await refreshData();
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not update support ticket.");
+    }
+  };
   const handleDeleteAdminLog = async (log) => {
     if (!window.confirm("Delete this admin audit entry? This cannot be undone.")) return;
     try {
@@ -320,7 +355,12 @@ export default function CommandCenter() {
 
   const currentModule = MODULES.find(module => module.id === activeModule);
   const moduleStats = stats[activeModule] || {};
-  const allRequests = useMemo(() => flattenRequestRecords(requestGroups), [requestGroups]);
+  const allRequests = useMemo(() => flattenRequestRecords(requestGroups).sort((a, b) => {
+    const priority = value => value?.priority === "high" ? 0 : value?.priority === "medium" ? 1 : 2;
+    const unread = value => value?.adminUnread || String(value?.status || "").toLowerCase() === "new" ? 0 : 1;
+    return (priority(a) - priority(b)) || (unread(a) - unread(b)) || ((toDate(b.createdAt || b.timestamp)?.getTime() || 0) - (toDate(a.createdAt || a.timestamp)?.getTime() || 0));
+  }), [requestGroups]);
+  const unreadPurchaseRequests = allRequests.filter(request => request.sourceCollection === "purchase_requests" && (request.adminUnread || String(request.status || "").toLowerCase() === "new"));
   const totals = useMemo(() => {
     const paidOrders = orders.filter(order => ["paid", "completed", "complete"].includes(normalizeStatus(order.status)));
     return {
@@ -358,7 +398,23 @@ export default function CommandCenter() {
   const userOrders = selectedUser ? orders.filter(order => order.userId === selectedUserId || order.customerId === selectedUserId || order.customerEmail === selectedUser.email || order.email === selectedUser.email) : [];
   const userTransactions = selectedUser ? transactions.filter(transaction => transaction.userId === selectedUserId || transaction.customerEmail === selectedUser.email || transaction.email === selectedUser.email || paymentPhone(transaction) === selectedUser.phone) : [];
   const userChats = selectedUser ? chats.filter(chat => chat.userId === selectedUserId || chat.customerId === selectedUserId || chat.customerEmail === selectedUser.email || chat.email === selectedUser.email) : [];
-  const userDownloads = selectedUser ? downloads.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
+  const storedUserDownloads = selectedUser ? downloads.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
+  const paidUserDocumentEntitlements = selectedUser ? userOrders
+    .filter(order => ["paid", "completed", "complete"].includes(normalizeStatus(order.status)) && ["document", "legal-document", "service-document"].includes(String(order.type || "").toLowerCase()) && order.productId)
+    .filter(order => !storedUserDownloads.some(download => download.orderId === (order.orderId || order.id)))
+    .map(order => ({
+      id: `entitlement-${order.orderId || order.id}`,
+      orderId: order.orderId || order.id,
+      customerId: selectedUserId,
+      productId: order.productId,
+      productSlug: order.productSlug || "",
+      productTitle: order.productTitle || "Original document",
+      fileName: order.productTitle ? `${order.productTitle}.pdf` : "webertech-document.pdf",
+      status: "paid",
+      entitlement: true,
+      createdAt: order.updatedAt || order.createdAt,
+    })) : [];
+  const userDownloads = [...storedUserDownloads, ...paidUserDocumentEntitlements];
   const userServices = selectedUser ? services.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
   const userInvoices = selectedUser ? invoices.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
   const userNotifications = selectedUser ? notifications.filter(item => item.customerId === selectedUserId || item.userId === selectedUserId || item.customerEmail === selectedUser.email) : [];
@@ -467,6 +523,12 @@ export default function CommandCenter() {
           </aside>
 
           <main className="cmd-main">
+            {unreadPurchaseRequests.length > 0 && (
+              <section className="cmd-card" style={{ borderColor: "rgba(251,191,36,.6)", background: "rgba(120,53,15,.22)" }}>
+                <div className="cmd-card-header"><div><h2 className="cmd-card-title">🔔 Checkout follow-ups ({unreadPurchaseRequests.length})</h2><p className="cmd-card-subtitle">Priority purchase outcomes requiring customer care. They are sorted above older inbox records.</p></div><button style={commonButton} onClick={() => { setActiveView("logs"); setSearch(""); }}>Open priority requests</button></div>
+                <div style={{ display: "grid", gap: 8 }}>{unreadPurchaseRequests.slice(0, 3).map(request => <div key={`${request.sourceCollection}-${request.id}`} style={{ padding: 10, borderRadius: 9, background: "rgba(15,23,42,.35)" }}><strong>{request.title || request.requestType || "Checkout request"}</strong><div style={{ fontSize: 12, marginTop: 3 }}>{displayName(request)} · {request.service || request.productTitle || "WeberTech service"} · {request.customerPhone || request.phone || request.customerEmail || request.email || "No contact"}</div></div>)}</div>
+              </section>
+            )}
             {(activeView === "overview" || activeView === "orders") && (
               <section className="cmd-card">
                 <div className="cmd-card-header">
@@ -535,7 +597,7 @@ export default function CommandCenter() {
                 <SimpleDataTable title={`Services (${services.length})`} rows={services} exportName="webertech-services.csv" columns={[{ label: "Service", key: "serviceName" }, { label: "Customer", key: "customerId" }, { label: "Assigned to", key: "assignedTo" }, { label: "Status", key: "status" }, { label: "Created", key: "createdAt", render: value => formatDate(value) }, { label: "Updated", key: "updatedAt", render: value => formatDate(value) }]} />
                 <SimpleDataTable title={`Invoices (${invoices.length})`} rows={invoices} exportName="webertech-invoices.csv" columns={[{ label: "Invoice", key: "invoiceNumber" }, { label: "Customer", key: "customerId" }, { label: "Amount", key: "amount", render: value => money(value) }, { label: "Status", key: "status" }, { label: "Due", key: "dueDate", render: value => formatDate(value, false) }, { label: "Created", key: "createdAt", render: value => formatDate(value) }]} />
                 <SimpleDataTable title={`Notifications (${notifications.length})`} rows={notifications} exportName="webertech-notifications.csv" columns={[{ label: "Notification", key: "id" }, { label: "Customer", key: "customerId" }, { label: "Type", key: "type" }, { label: "Subject", key: "subject" }, { label: "Read", key: "read", render: value => value ? "Read" : "Unread" }, { label: "Created", key: "createdAt", render: value => formatDate(value) }]} />
-                <SimpleDataTable title={`Support tickets (${supportTickets.length})`} rows={supportTickets} exportName="webertech-support-tickets.csv" columns={[{ label: "Ticket", key: "id" }, { label: "Customer", key: "customerId" }, { label: "Subject", key: "subject" }, { label: "Category", key: "category" }, { label: "Priority", key: "priority" }, { label: "Status", key: "status" }, { label: "Updated", key: "updatedAt", render: value => formatDate(value) }]} />
+                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Support tickets ({supportTickets.length})</h2><p className="cmd-card-subtitle">Move each request through a transparent stage until it is resolved or closed.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-support-tickets.csv", supportTickets.map(ticket => ({ ticket: ticket.ticketNumber || ticket.id, customer: ticket.customerId || ticket.userId, subject: ticket.subject, category: ticket.category, priority: ticket.priority, stage: ticket.stageLabel || ticket.stage || "Received", status: ticket.status || "open", updated: formatDate(ticket.updatedAt || ticket.createdAt) })))}>⬇ Export tickets</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Ticket</th><th>Customer</th><th>Subject</th><th>Priority</th><th>Stage</th><th>Progress</th><th>Update</th></tr></thead><tbody>{supportTickets.map(ticket => { const currentStage = SUPPORT_STAGE_IDS.includes(ticket.stage) ? ticket.stage : (String(ticket.status || "").toLowerCase() === "resolved" ? "resolved" : "received"); const index = SUPPORT_STAGE_IDS.indexOf(currentStage); return <tr key={ticket.id}><td style={{ fontFamily: "monospace", fontSize: 11 }}>{ticket.ticketNumber || ticket.id}</td><td>{displayName(ticket)}<br /><span style={{ fontSize: 10, color: "rgba(255,255,255,.5)" }}>{ticket.customerEmail || ticket.email || ticket.customerId || ticket.userId || "—"}</span></td><td><strong>{ticket.subject || "Support request"}</strong><div style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}>{ticket.category || "General support"}</div></td><td>{ticket.priority || "normal"}</td><td><span className={`cmd-badge cmd-badge-${currentStage === "resolved" || currentStage === "closed" ? "paid" : "pending"}`}>{SUPPORT_STAGES.find(stage => stage.id === currentStage)?.label || currentStage}</span></td><td><div style={{ minWidth: 180, fontSize: 10, color: "rgba(255,255,255,.65)" }}>{SUPPORT_STAGES.map((stage, stageIndex) => <span key={stage.id} style={{ color: stageIndex <= index ? "#86efac" : "rgba(255,255,255,.35)", marginRight: 4 }}>●</span>)}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,.5)" }}>{Array.isArray(ticket.stageHistory) ? `${ticket.stageHistory.length} updates` : "Initial stage"} · {formatDate(ticket.updatedAt || ticket.createdAt)}</div></td><td><select value={currentStage} onChange={event => handleSupportTicketUpdate(ticket, event.target.value)} style={{ background: "#0f172a", color: "white", border: "1px solid rgba(255,255,255,.2)", borderRadius: 6, padding: "6px 8px" }}>{SUPPORT_STAGES.map(stage => <option key={stage.id} value={stage.id}>{stage.label}</option>)}</select></td></tr>; })}{!supportTickets.length && <tr><td colSpan="7"><div className="cmd-empty">No support tickets found.</div></td></tr>}</tbody></table></div></section>
                 <SimpleDataTable title={`Products (${products.length})`} rows={products} exportName="webertech-products.csv" columns={[{ label: "Product", key: "title" }, { label: "Category", key: "category" }, { label: "Price", key: "price", render: value => money(value) }, { label: "Status", key: "status" }, { label: "Updated", key: "updatedAt", render: value => formatDate(value) }]} />
                 <SimpleDataTable title={`Referral profiles (${referrals.length})`} rows={referrals} exportName="webertech-referral-profiles.csv" columns={[{ label: "User", key: "userId" }, { label: "Code", key: "code" }, { label: "Referrer", key: "referrerId" }, { label: "Incoming code", key: "referredByCode" }, { label: "Rate", key: "commissionRate", render: value => `${Number(value || 0.1) * 100}%` }, { label: "Updated", key: "updatedAt", render: value => formatDate(value) }]} />
                 <SimpleDataTable title={`Referral earnings ledger (${referralEarnings.length})`} rows={referralEarnings} exportName="webertech-referral-earnings.csv" columns={[{ label: "Ledger entry", key: "id" }, { label: "Referrer", key: "referrerId" }, { label: "Referred customer", key: "referredUserId" }, { label: "Order", key: "orderId" }, { label: "Order amount", key: "orderAmount", render: value => money(value) }, { label: "Commission", key: "commissionAmount", render: value => money(value) }, { label: "Status", key: "status" }, { label: "Created", key: "createdAt", render: value => formatDate(value) }]} />
@@ -571,7 +633,7 @@ export default function CommandCenter() {
               <>
                 <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Admin read/write audit log ({adminLogs.length})</h2><p className="cmd-card-subtitle">Administrative writes are recorded separately from customer activity. Read this section after refresh.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-admin-audit-logs.csv", adminLogs.map(log => ({ id: log.id, admin: log.adminEmail, action: log.action, target: log.targetId, metadata: log.metadata, timestamp: formatDate(log.timestamp) })))}>⬇ Excel CSV</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>When</th><th>Administrator</th><th>Action</th><th>Target</th><th>Details</th><th>Control</th></tr></thead><tbody>{adminLogs.length ? adminLogs.map(log => <tr key={log.id}><td>{formatDate(log.timestamp)}</td><td>{log.adminEmail || log.adminUid || "—"}</td><td><span className="cmd-badge cmd-badge-paid">{log.action}</span></td><td style={{ fontFamily: "monospace", fontSize: 11 }}>{log.targetId || "—"}</td><td style={{ maxWidth: 260, wordBreak: "break-word" }}>{log.metadata ? JSON.stringify(log.metadata) : "—"}</td><td><button style={{ ...commonButton, color: "#fca5a5", borderColor: "rgba(252,165,165,.25)" }} onClick={() => handleDeleteAdminLog(log)}>Delete</button></td></tr>) : <tr><td colSpan="6"><div className="cmd-empty">No admin audit entries yet. Status changes and other protected writes will appear here.</div></td></tr>}</tbody></table></div></section>
                 <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Customer activity and generated reports</h2><p className="cmd-card-subtitle">Read-only operational history from activities and reports, loaded on refresh.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-activity-report.csv", [...activities.map(activity => ({ source: "activity", id: activity.id, userId: activity.userId, type: activity.type, description: activity.description, timestamp: formatDate(activity.timestamp) })), ...reports.map(report => ({ source: "report", id: report.id, type: report.type || report.title, description: report.message || report.summary, timestamp: formatDate(report.date || report.createdAt) }))])}>⬇ Export logs</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Source</th><th>Record</th><th>Customer / owner</th><th>Description</th><th>When</th></tr></thead><tbody>{[...activities.map(activity => ({ source: "Activity", id: activity.id, owner: activity.userId, description: activity.description || activity.type, date: activity.timestamp })), ...reports.map(report => ({ source: "Report", id: report.id, owner: report.createdBy || "System", description: report.message || report.summary || report.title || "Generated platform report", date: report.date || report.createdAt }))].sort((a, b) => (toDate(b.date)?.getTime() || 0) - (toDate(a.date)?.getTime() || 0)).slice(0, 80).map(record => <tr key={`${record.source}-${record.id}`}><td>{record.source}</td><td style={{ fontFamily: "monospace", fontSize: 11 }}>{record.id}</td><td>{record.owner || "—"}</td><td>{record.description}</td><td>{formatDate(record.date)}</td></tr>)}{!activities.length && !reports.length && <tr><td colSpan="5"><div className="cmd-empty">No activity or report records found.</div></td></tr>}</tbody></table></div></section>
-                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Inbound requests ({allRequests.length})</h2><p className="cmd-card-subtitle">Waitlists and service inquiries across all WeberTech divisions.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-inbound-requests.csv", allRequests.map(request => ({ type: request.requestType, source: request.sourceCollection, name: displayName(request), email: request.email || request.customerEmail, phone: request.phone || request.customerPhone, message: request.message || request.summary, status: request.status, received: formatDate(request.createdAt || request.timestamp) })))}>⬇ Export requests</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Type</th><th>Customer</th><th>Contact</th><th>Message</th><th>Status</th><th>Received</th></tr></thead><tbody>{allRequests.slice(0, 100).map(request => <tr key={`${request.sourceCollection}-${request.id}`}><td>{request.requestType}</td><td>{displayName(request)}</td><td>{request.email || request.customerEmail || "—"}<br />{request.phone || request.customerPhone || "—"}</td><td>{request.message || request.summary || "No message supplied"}</td><td>{request.status || "New"}</td><td>{formatDate(request.createdAt || request.timestamp)}</td></tr>)}{!allRequests.length && <tr><td colSpan="6"><div className="cmd-empty">No inbound requests found.</div></td></tr>}</tbody></table></div></section>
+                <section className="cmd-card"><div className="cmd-card-header"><div><h2 className="cmd-card-title">Inbound requests ({allRequests.length}) {unreadPurchaseRequests.length ? <span style={{ color: "#fbbf24" }}>· {unreadPurchaseRequests.length} priority</span> : null}</h2><p className="cmd-card-subtitle">Checkout outcomes, waitlists, and service inquiries across all WeberTech divisions. Priority checkout follow-ups appear first.</p></div><button style={commonButton} onClick={() => exportCsv("webertech-inbound-requests.csv", allRequests.map(request => ({ type: request.requestType, source: request.sourceCollection, name: displayName(request), email: request.email || request.customerEmail, phone: request.phone || request.customerPhone, message: request.message || request.summary, status: request.status, received: formatDate(request.createdAt || request.timestamp) })))}>⬇ Export requests</button></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Type</th><th>Customer</th><th>Contact</th><th>Message</th><th>Status</th><th>Received</th><th>Contact</th></tr></thead><tbody>{allRequests.slice(0, 100).map(request => <tr key={`${request.sourceCollection}-${request.id}`}><td>{request.requestType}</td><td>{displayName(request)}<div style={{ color: "rgba(255,255,255,.5)", fontSize: 10 }}>{request.service || request.productTitle || ""}</div></td><td>{request.email || request.customerEmail || "—"}<br />{request.phone || request.customerPhone || "—"}</td><td>{request.message || request.summary || "No message supplied"}</td><td><span className={`cmd-badge cmd-badge-${request.priority === "high" ? "pending" : normalizeStatus(request.status || "new")}`}>{request.priority === "high" ? "Priority" : request.status || "New"}</span></td><td>{formatDate(request.createdAt || request.timestamp)}</td><td style={{ whiteSpace: "nowrap" }}>{(request.phone || request.customerPhone) ? <button style={commonButton} onClick={() => { const raw = String(request.phone || request.customerPhone).replace(/\D/g, ""); const phone = raw.startsWith("0") ? `254${raw.slice(1)}` : raw; window.open(`https://wa.me/${phone}?text=${encodeURIComponent(request.message || request.summary || `Hello ${displayName(request)}, WeberTech is following up on your ${request.service || request.productTitle || "service"}.`)}`, "_blank", "noopener,noreferrer"); }}>WhatsApp</button> : null} {(request.email || request.customerEmail) ? <button style={commonButton} onClick={() => { const email = request.email || request.customerEmail; window.location.href = `mailto:${email}?subject=${encodeURIComponent(request.title || "WeberTech follow-up")}&body=${encodeURIComponent(request.message || request.summary || "Hello, WeberTech is following up on your service request.")}`; }}>Email</button> : null}</td></tr>)}{!allRequests.length && <tr><td colSpan="7"><div className="cmd-empty">No inbound requests found.</div></td></tr>}</tbody></table></div></section>
               </>
             )}
           </main>

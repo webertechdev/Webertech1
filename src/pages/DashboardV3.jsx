@@ -10,6 +10,14 @@ import { toast, Toaster } from "react-hot-toast";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import { loadReferralSnapshot, referralLinkForCode, REFERRAL_COMMISSION_RATE, displayReferralName } from "../utils/referrals";
+const SUPPORT_STAGES = [
+  { id: "received", label: "Received", description: "We received your support request." },
+  { id: "under_review", label: "Under review", description: "A support agent is reviewing the request." },
+  { id: "in_progress", label: "In progress", description: "Our team is actively working on a solution." },
+  { id: "waiting_customer", label: "Waiting for you", description: "We need information or confirmation from you." },
+  { id: "resolved", label: "Resolved", description: "The requested support has been completed." },
+  { id: "closed", label: "Closed", description: "This support ticket has been closed." },
+];
 
 export default function DashboardV3({ user: initialUser }) {
   const [user, setUser] = useState(initialUser || null);
@@ -251,15 +259,17 @@ export default function DashboardV3({ user: initialUser }) {
     { icon: "💰", label: "Wallet Balance", value: `KES ${wallet.balance.toFixed(0)}`, color: "#7c3aed", bg: "#ede9fe" },
   ];
 
+  const unreadNotificationCount = notifications.filter(notification => notification.read !== true).length;
   const tabs = [
     { id: "overview", icon: "📊", label: "Overview" },
     { id: "orders", icon: "📋", label: "Orders" },
     { id: "downloads", icon: "⬇️", label: "Downloads" },
     { id: "services", icon: "⚙️", label: "Services" },
+    { id: "support", icon: "🎧", label: tickets.length ? `Support (${tickets.length})` : "Support" },
     { id: "wallet", icon: "💰", label: "Wallet" },
     { id: "rewards", icon: "🎁", label: "Rewards" },
     { id: "referrals", icon: "🔗", label: "Refer & Earn" },
-    { id: "notifications", icon: "🔔", label: "Notifications" },
+    { id: "notifications", icon: "🔔", label: unreadNotificationCount ? `Notifications (${unreadNotificationCount})` : "Notifications" },
     { id: "settings", icon: "⚙️", label: "Settings" },
   ];
 
@@ -487,22 +497,30 @@ export default function DashboardV3({ user: initialUser }) {
             {tab === "notifications" && (
               <div className="dash-card">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <h3 style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>🔔 Notification History ({notifications.length})</h3>
-                  <button className="dash-btn dash-btn-secondary">Clear All</button>
+                  <h3 style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>🔔 Notification History ({notifications.length}){unreadNotificationCount ? <span style={{ color: "#dc2626", marginLeft: 8 }}>· {unreadNotificationCount} new</span> : null}</h3>
+                  <button className="dash-btn dash-btn-secondary" onClick={async () => { try { await Promise.all(notifications.filter(notification => notification.read !== true).map(notification => updateDoc(doc(db, "notifications", notification.id), { read: true, updatedAt: serverTimestamp() }))); setNotifications(notifications.map(notification => ({ ...notification, read: true }))); toast.success("Notifications marked as read."); } catch (error) { toast.error("Could not update notifications."); } }}>Mark all read</button>
                 </div>
                 {notifications.length === 0 ? (
                   <p style={{ color: "#9ca3af", textAlign: "center", padding: "20px 0" }}>No notifications yet.</p>
                 ) : (
                   <div style={{ display: "grid", gap: 12 }}>
                     {notifications.slice(0, 10).map(n => (
-                      <div key={n.id} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-                        <div style={{ fontWeight: 700, color: "#111827", marginBottom: 4 }}>{n.title}</div>
+                      <div key={n.id} style={{ background: n.read ? "#f9fafb" : "#fff7ed", border: `1px solid ${n.read ? "#e5e7eb" : "#fdba74"}`, borderRadius: 10, padding: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}><div style={{ fontWeight: 700, color: "#111827", marginBottom: 4 }}>{n.title || "WeberTech update"}</div>{n.read !== true ? <span style={{ color: "#c2410c", fontSize: 11, fontWeight: 800 }}>NEW</span> : null}</div>
                         <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 6 }}>{n.message}</div>
-                        <div style={{ color: "#9ca3af", fontSize: 11 }}>{n.createdAt?.toDate?.().toLocaleString?.() || "—"}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}><div style={{ color: "#9ca3af", fontSize: 11 }}>{(n.createdAt || n.timestamp)?.toDate?.().toLocaleString?.() || "—"}</div>{n.actionUrl ? <a href={n.actionUrl} style={{ color: "#16a34a", fontSize: 12, fontWeight: 800 }}>Open service / dashboard →</a> : null}</div>
                       </div>
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* SUPPORT */}
+            {tab === "support" && (
+              <div className="dash-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}><div><h3 style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>Support tickets ({tickets.length})</h3><p style={{ color: "#6b7280", fontSize: 12, margin: "5px 0 0" }}>Track every request from receipt to resolution. Refresh to load the latest stage.</p></div><button className="dash-btn dash-btn-secondary" onClick={refreshData} disabled={loading}>{loading ? "⟳" : "🔄 Refresh"}</button></div>
+                {tickets.length === 0 ? <p style={{ color: "#9ca3af", textAlign: "center", padding: "20px 0" }}>No support tickets yet.</p> : <div style={{ display: "grid", gap: 16 }}>{tickets.map(ticket => { const currentStage = SUPPORT_STAGES.some(stage => stage.id === ticket.stage) ? ticket.stage : "received"; const currentIndex = SUPPORT_STAGES.findIndex(stage => stage.id === currentStage); return <div key={ticket.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "#fff" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><strong>{ticket.subject || "Support request"}</strong><div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>{ticket.ticketNumber || ticket.id} · {ticket.category || "General support"} · {ticket.priority || "normal"} priority</div></div><span style={{ padding: "7px 10px", borderRadius: 999, background: "#ecfdf5", color: "#166534", fontSize: 12, fontWeight: 700 }}>{SUPPORT_STAGES.find(stage => stage.id === currentStage)?.label}</span></div><div style={{ display: "grid", gridTemplateColumns: `repeat(${SUPPORT_STAGES.length}, minmax(70px, 1fr))`, gap: 4, marginTop: 18 }}>{SUPPORT_STAGES.map((stage, index) => <div key={stage.id} style={{ textAlign: "center", fontSize: 11, color: index <= currentIndex ? "#16a34a" : "#9ca3af", fontWeight: index === currentIndex ? 800 : 600 }}><div style={{ height: 8, borderRadius: 8, background: index <= currentIndex ? "#22c55e" : "#e5e7eb", marginBottom: 6 }} />{stage.label}</div>)}</div><div style={{ marginTop: 14, color: "#6b7280", fontSize: 13 }}>{SUPPORT_STAGES.find(stage => stage.id === currentStage)?.description}</div>{Array.isArray(ticket.stageHistory) && ticket.stageHistory.length > 0 ? <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #f3f4f6", color: "#6b7280", fontSize: 12 }}>Latest update: {ticket.stageHistory[ticket.stageHistory.length - 1].label || ticket.stageHistory[ticket.stageHistory.length - 1].stage} · {ticket.stageHistory.length} total updates</div> : null}</div>; })}</div>}
               </div>
             )}
 
