@@ -18,6 +18,9 @@ function getAdminApp() {
 }
 
 function normalize(record, id) {
+  const sourceUrl = record.fileUrl || record.downloadURL || record.downloadFile || record.documentUrl || record.url || "";
+  const fileName = record.fileName || "";
+
   return {
     id,
     title: record.title || "Untitled document",
@@ -32,8 +35,12 @@ function normalize(record, id) {
     features: Array.isArray(record.features)
       ? record.features
       : String(record.features || "").split(",").map(value => value.trim()).filter(Boolean),
-    fileUrl: record.fileUrl || record.downloadURL || record.downloadFile || record.documentUrl || record.url || "",
-    fileName: record.fileName || "",
+    // The original link is intentionally not returned by this public endpoint.
+    // Customers preview through a server route and receive the original only
+    // through the paid-order delivery route.
+    previewUrl: sourceUrl ? `/api/document-preview?productId=${encodeURIComponent(id)}` : "",
+    hasDocument: Boolean(sourceUrl),
+    fileName,
     slug: record.slug || id,
     createdAt: record.createdAt?.toDate?.()?.toISOString?.() || null,
   };
@@ -43,6 +50,7 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "no-store, max-age=0");
 
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
@@ -68,4 +76,3 @@ export default async function handler(req, res) {
 export const runtime = "nodejs";
 export const config = { api: { bodyParser: false } };
 export const __test__ = { normalize };
-
