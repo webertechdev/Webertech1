@@ -374,7 +374,12 @@ export default function UnifiedControlCenterV3() {
     responseStyle: "Concise and clear",
     knowledgeBase: "",
     behaviorRules: "Always provide direct service links. Never generate PDFs.",
+    learnedCorrections: [],
   });
+  const [trainerMessages, setTrainerMessages] = useState([]);
+  const [trainerQuestion, setTrainerQuestion] = useState("");
+  const [trainerCorrection, setTrainerCorrection] = useState("");
+  const [trainerLoading, setTrainerLoading] = useState(false);
   const [stats, setStats] = useState({
     totalOrders: 0,
     totalRevenue: 0,
@@ -915,6 +920,7 @@ export default function UnifiedControlCenterV3() {
         responseStyle: aiTraining.responseStyle,
         knowledgeBase: aiTraining.knowledgeBase,
         behaviorRules: aiTraining.behaviorRules,
+        learnedCorrections: Array.isArray(aiTraining.learnedCorrections) ? aiTraining.learnedCorrections : [],
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
@@ -928,6 +934,78 @@ export default function UnifiedControlCenterV3() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleTrainerAsk = async () => {
+    const question = trainerQuestion.trim();
+    if (!question || trainerLoading) return;
+
+    const nextMessages = [...trainerMessages, { role: "user", text: question }];
+    setTrainerMessages(nextMessages);
+    setTrainerQuestion("");
+    setTrainerCorrection("");
+    setTrainerLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages, lang: aiTraining.language }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || typeof result.answer !== "string") {
+        throw new Error(result.error || "WeberAI could not answer the training question.");
+      }
+      setTrainerMessages([...nextMessages, { role: "assistant", text: result.answer }]);
+    } catch (error) {
+      toast.error(error.message || "The training question failed.");
+    } finally {
+      setTrainerLoading(false);
+    }
+  };
+
+  const handleSaveTrainerCorrection = async () => {
+    const question = [...trainerMessages].reverse().find(message => message.role === "user")?.text?.trim();
+    const previousAnswer = [...trainerMessages].reverse().find(message => message.role === "assistant")?.text?.trim();
+    const correctedAnswer = trainerCorrection.trim();
+
+    if (!question || !correctedAnswer) {
+      toast.error("Ask a question first, then write the preferred answer.");
+      return;
+    }
+
+    const correction = {
+      id: `correction_${Date.now()}`,
+      question,
+      previousAnswer: previousAnswer || "",
+      correctedAnswer,
+      createdAt: new Date().toISOString(),
+    };
+    const learnedCorrections = [
+      ...(Array.isArray(aiTraining.learnedCorrections) ? aiTraining.learnedCorrections : []),
+      correction,
+    ].slice(-40);
+
+    setLoading(true);
+    try {
+      await setDoc(doc(db, "config", "weberai"), {
+        learnedCorrections,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setAiTraining(prev => ({ ...prev, learnedCorrections }));
+      setTrainerCorrection("");
+      toast.success("✅ Correction saved. WeberAI will use it for matching customer questions.");
+    } catch (error) {
+      toast.error("Failed to save correction: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearTrainer = () => {
+    setTrainerMessages([]);
+    setTrainerQuestion("");
+    setTrainerCorrection("");
   };
 
   // Send admin reply
@@ -1492,6 +1570,74 @@ export default function UnifiedControlCenterV3() {
                 <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, marginBottom: 20 }}>
                   ⚠️ WeberAI provides direct service links and instructions. No PDFs.
                 </p>
+
+                <div style={{ padding: 16, borderRadius: 12, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(74,222,128,0.25)", marginBottom: 24 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                    <div>
+                      <h4 style={{ margin: 0, color: "#bbf7d0", fontSize: 16 }}>🧠 Ask, correct, and teach WeberAI</h4>
+                      <p style={{ margin: "6px 0 0", color: "rgba(255,255,255,0.65)", fontSize: 12 }}>
+                        Ask the same kind of question customers ask. If the answer is wrong, write the answer you prefer and save it. Matching future customer questions will use your correction.
+                      </p>
+                    </div>
+                    <span style={{ color: "#86efac", fontSize: 12 }}>{Array.isArray(aiTraining.learnedCorrections) ? aiTraining.learnedCorrections.length : 0} learned corrections</span>
+                  </div>
+
+                  {trainerMessages.length > 0 && (
+                    <div style={{ display: "grid", gap: 8, maxHeight: 260, overflowY: "auto", marginBottom: 12 }}>
+                      {trainerMessages.map((message, index) => (
+                        <div key={`${message.role}-${index}`} style={{ padding: "10px 12px", borderRadius: 8, background: message.role === "user" ? "rgba(59,130,246,0.16)" : "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.86)", fontSize: 13, whiteSpace: "pre-wrap" }}>
+                          <strong style={{ color: message.role === "user" ? "#93c5fd" : "#86efac" }}>{message.role === "user" ? "You" : "WeberAI"}</strong>
+                          <div style={{ marginTop: 4 }}>{message.text}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <textarea
+                    className="uc-textarea"
+                    value={trainerQuestion}
+                    onChange={event => setTrainerQuestion(event.target.value)}
+                    onKeyDown={event => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) handleTrainerAsk(); }}
+                    placeholder="Ask WeberAI a customer question, e.g. How do I register a business?"
+                    style={{ minHeight: 84, marginBottom: 8 }}
+                  />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                    <button className="uc-btn" onClick={handleTrainerAsk} disabled={trainerLoading || !trainerQuestion.trim()}>
+                      {trainerLoading ? "⟳ Asking WeberAI..." : "💬 Ask WeberAI"}
+                    </button>
+                    <button className="uc-refresh-btn" onClick={handleClearTrainer} disabled={trainerLoading}>Clear test</button>
+                  </div>
+
+                  {trainerMessages.some(message => message.role === "assistant") && (
+                    <>
+                      <label style={{ color: "#bbf7d0", fontSize: 12, fontWeight: 700, marginBottom: 6, display: "block" }}>If that answer is wrong, write the preferred answer</label>
+                      <textarea
+                        className="uc-textarea"
+                        value={trainerCorrection}
+                        onChange={event => setTrainerCorrection(event.target.value)}
+                        placeholder="Example: Tell customers to open Cyber → Business Services, choose Business Registration, and follow the instructions. Use [Business Registration](/cyber/business)."
+                        style={{ minHeight: 110, marginBottom: 8 }}
+                      />
+                      <button className="uc-btn" onClick={handleSaveTrainerCorrection} disabled={loading || !trainerCorrection.trim()}>
+                        {loading ? "⟳ Saving correction..." : "✅ Save this correction"}
+                      </button>
+                    </>
+                  )}
+
+                  {Array.isArray(aiTraining.learnedCorrections) && aiTraining.learnedCorrections.length > 0 && (
+                    <details style={{ marginTop: 14, color: "rgba(255,255,255,0.72)" }}>
+                      <summary style={{ cursor: "pointer", color: "#86efac", fontSize: 12 }}>View recent learned corrections</summary>
+                      <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                        {aiTraining.learnedCorrections.slice(-5).reverse().map(item => (
+                          <div key={item.id || item.createdAt || item.question} style={{ padding: 10, borderRadius: 8, background: "rgba(255,255,255,0.05)", fontSize: 12 }}>
+                            <strong style={{ color: "#fff" }}>{item.question}</strong>
+                            <div style={{ marginTop: 4, whiteSpace: "pre-wrap" }}>{item.correctedAnswer}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
                   <div>
