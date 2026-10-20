@@ -73,7 +73,7 @@ export default function Electronics() {
     let active = true;
     setLoading(true);
     setError("");
-    fetch(`/api/onfon-products?brand=${encodeURIComponent(brand)}`)
+    fetch(`/api/public-products?route=onfon&brand=${encodeURIComponent(brand)}`)
       .then(async response => {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || "Onfon catalog unavailable");

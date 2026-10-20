@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { getDb } from "./_lib/firebaseAdmin.js";
 import { fetchRemotePdf, getDocumentSource, getFileName } from "./_lib/documentLinks.js";
 import { isDocumentOrderType } from "./_lib/orders.js";
+import { getOnfonCatalog } from "./_lib/onfon.js";
 
 const require = createRequire(import.meta.url);
 
@@ -225,6 +226,16 @@ async function handleCatalog(req, res) {
   }
 }
 
+async function handleOnfon(req, res) {
+  try {
+    const brand = getQuery(req, "brand") || "Tecno";
+    return res.status(200).json(await getOnfonCatalog(brand));
+  } catch (error) {
+    console.error("Onfon catalog error", { message: error?.message || "" });
+    return res.status(502).json({ error: "Unable to load the official Onfon catalog right now." });
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -237,6 +248,7 @@ export default async function handler(req, res) {
   const route = getQuery(req, "route");
   if (route === "preview") return handlePreview(req, res);
   if (route === "download") return handleDownload(req, res);
+  if (route === "onfon") return handleOnfon(req, res);
   return handleCatalog(req, res);
 }
 

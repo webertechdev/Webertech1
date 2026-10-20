@@ -15,11 +15,7 @@ function cleanText(value = "") {
 }
 
 function decodeUrl(value = "") {
-  try {
-    return decodeURIComponent(value.replace(/&amp;/g, "&"));
-  } catch {
-    return value;
-  }
+  try { return decodeURIComponent(value.replace(/&amp;/g, "&")); } catch { return value; }
 }
 
 function parseProducts(html, brand) {
@@ -38,18 +34,7 @@ function parseProducts(html, brand) {
     const sourceUrl = `${ONFON_ORIGIN}/products/${encodeURIComponent(brand)}/${encodeURIComponent(title)}`;
     const id = `${brand}-${title}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     if (!products.some(item => item.id === id)) {
-      products.push({
-        id,
-        title,
-        brand,
-        imageUrl,
-        sourceUrl,
-        dailyPayment: Number(daily.replace(/,/g, "")) || null,
-        deposit: Number(deposit.replace(/,/g, "")) || null,
-        planDays: 365,
-        provider: "Onfon Mobile",
-        type: "electronics",
-      });
+      products.push({ id, title, brand, imageUrl, sourceUrl, dailyPayment: Number(daily.replace(/,/g, "")) || null, deposit: Number(deposit.replace(/,/g, "")) || null, planDays: 365, provider: "Onfon Mobile", type: "electronics" });
     }
   }
   return products;
@@ -58,38 +43,22 @@ function parseProducts(html, brand) {
 async function loadBrand(brand) {
   const cached = cache.get(brand);
   if (cached && Date.now() - cached.at < CACHE_TTL) return cached.products;
-  const response = await fetch(`${ONFON_ORIGIN}/products/${encodeURIComponent(brand)}`, {
-    headers: { "User-Agent": "WeberTech Electronics Catalog/1.0" },
-  });
+  const response = await fetch(`${ONFON_ORIGIN}/products/${encodeURIComponent(brand)}`, { headers: { "User-Agent": "WeberTech Electronics Catalog/1.0" } });
   if (!response.ok) throw new Error(`Onfon ${brand} catalog returned ${response.status}`);
-  const html = await response.text();
-  const products = parseProducts(html, brand);
+  const products = parseProducts(await response.text(), brand);
   cache.set(brand, { at: Date.now(), products });
   return products;
 }
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
-  if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
-
-  const requested = String(req.query?.brand || "Tecno").trim();
-  const brands = requested.toLowerCase() === "all"
+export async function getOnfonCatalog(requested = "Tecno") {
+  const brands = String(requested).toLowerCase() === "all"
     ? BRANDS
-    : [BRANDS.find(item => item.toLowerCase() === requested.toLowerCase()) || "Tecno"];
-
-  try {
-    const results = await Promise.all(brands.map(async brand => {
-      try { return await loadBrand(brand); } catch (error) {
-        console.warn("Onfon catalog unavailable", brand, error.message);
-        return [];
-      }
-    }));
-    return res.status(200).json({ provider: "Onfon Mobile", source: `${ONFON_ORIGIN}/products`, brands: BRANDS, products: results.flat() });
-  } catch (error) {
-    return res.status(502).json({ error: "Unable to load the official Onfon catalog right now." });
-  }
+    : [BRANDS.find(item => item.toLowerCase() === String(requested).toLowerCase()) || "Tecno"];
+  const results = await Promise.all(brands.map(async brand => {
+    try { return await loadBrand(brand); } catch (error) {
+      console.warn("Onfon catalog unavailable", brand, error.message);
+      return [];
+    }
+  }));
+  return { provider: "Onfon Mobile", source: `${ONFON_ORIGIN}/products`, brands: BRANDS, products: results.flat() };
 }
