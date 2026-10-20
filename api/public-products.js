@@ -5,6 +5,7 @@ import { getDb } from "./_lib/firebaseAdmin.js";
 import { fetchRemotePdf, getDocumentSource, getFileName } from "./_lib/documentLinks.js";
 import { isDocumentOrderType } from "./_lib/orders.js";
 import { getOnfonCatalog } from "./_lib/onfon.js";
+import CASH_PHONE_SEED from "./_lib/cash-phone-seed.js";
 
 const require = createRequire(import.meta.url);
 
@@ -236,6 +237,27 @@ async function handleOnfon(req, res) {
   }
 }
 
+async function handleCashPhones(req, res) {
+  try {
+    const snapshot = await getDb().collection("electronics_cash_phones").get();
+    const managed = snapshot.docs.map(item => ({ id: item.id, ...item.data() })).filter(item => item.published !== false);
+    const source = managed.length ? "admin-managed" : "supplied-price-list";
+    return res.status(200).json({
+      source,
+      products: (managed.length ? managed : CASH_PHONE_SEED).map(item => ({
+        ...item,
+        imageUrl: item.imageUrl || "",
+        cashPrice: Number(item.cashPrice || 0),
+        category: item.category || "phones",
+        type: "electronics-cash-phone",
+      })),
+    });
+  } catch (error) {
+    console.error("Cash phone catalog error", { message: error?.message || "" });
+    return res.status(200).json({ source: "supplied-price-list", products: CASH_PHONE_SEED });
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -249,6 +271,7 @@ export default async function handler(req, res) {
   if (route === "preview") return handlePreview(req, res);
   if (route === "download") return handleDownload(req, res);
   if (route === "onfon") return handleOnfon(req, res);
+  if (route === "cash-phones") return handleCashPhones(req, res);
   return handleCatalog(req, res);
 }
 

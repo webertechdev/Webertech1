@@ -53,7 +53,32 @@ const VIEWS = [
   ["operations", "🗂️", "Operations"],
   ["users", "👥", "Users"],
   ["chats", "💬", "Support chats"],
+  ["ai-interactions", "🤖", "AI Interactions"],
 ];
+
+function phoneKey(brand, title) {
+  return `${String(brand || "").toLowerCase()}::${String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`;
+}
+
+function parsePhonePriceList(text) {
+  let brand = "Other";
+  const records = [];
+  String(text || "").split(/\r?\n/).forEach(line => {
+    const heading = line.match(/\*+\s*([^*\n]+?)\s*\*+/);
+    if (heading?.[1]) brand = heading[1].replace(/\s+/g, " ").trim();
+    const pattern = /([^@\n]{2,70}?)\s*(?:@|-)\s*([0-9][0-9,]*)/g;
+    let match;
+    while ((match = pattern.exec(line))) {
+      const title = match[1].replace(/[🔥❌]/g, "").replace(/\s+/g, " ").replace(/^.*?\*+\s*/, "").trim().replace(/^[-*\s]+|[-*\s]+$/g, "");
+      const cashPrice = Number(match[2].replace(/,/g, ""));
+      if (!title || title.length < 2 || !cashPrice || /available stock|^tecno$|^infinix$|^itel$|^oppo$|^nokia$/i.test(title)) continue;
+      records.push({ brand: brand.replace(/\b\w/g, letter => letter.toUpperCase()), title, cashPrice, category: "phones", type: "electronics-cash-phone", published: true, provider: "WeberTech cash stock" });
+    }
+  });
+  const unique = new Map();
+  records.forEach(item => unique.set(phoneKey(item.brand, item.title), item));
+  return Array.from(unique.values());
+}
 
 function toDate(value) {
   if (!value) return null;
@@ -262,6 +287,50 @@ export default function CommandCenter() {
   const [contactBusy, setContactBusy] = useState(false);
   const [draftBusy, setDraftBusy] = useState(false);
   const [focusedRequestKey, setFocusedRequestKey] = useState("");
+  const [cashPhones, setCashPhones] = useState([]);
+  const [priceChanges, setPriceChanges] = useState([]);
+  const [priceListText, setPriceListText] = useState("");
+  const [pricePreview, setPricePreview] = useState(null);
+  const [priceBusy, setPriceBusy] = useState(false);
+
+  const refreshPhonePricing = async () => {
+    const [phones, changes] = await Promise.all([
+      safeCollectionRead("electronics_cash_phones", "updatedAt"),
+      safeCollectionRead("electronics_price_changes", "createdAt"),
+    ]);
+    setCashPhones(phones);
+    setPriceChanges(changes);
+  };
+
+  const analyzePriceList = () => {
+    const incoming = parsePhonePriceList(priceListText);
+    if (!incoming.length) return toast.error("No priced phone rows were found. Use lines such as Brand Model @ 12500.");
+    const current = new Map(cashPhones.map(item => [phoneKey(item.brand, item.title), item]));
+    const changes = incoming.map(item => {
+      const existing = current.get(phoneKey(item.brand, item.title));
+      return { ...item, id: existing?.id || `cash-${phoneKey(item.brand, item.title).replace(/[^a-z0-9]+/g, "-")}`, previousPrice: existing?.cashPrice || null, changeType: existing ? (Number(existing.cashPrice) === item.cashPrice ? "unchanged" : "price-changed") : "new" };
+    });
+    setPricePreview({ incoming, changes, changed: changes.filter(item => item.changeType !== "unchanged") });
+    toast.success(`AI Interactions found ${changes.filter(item => item.changeType !== "unchanged").length} updates across ${incoming.length} priced phones.`);
+  };
+
+  const applyPriceList = async () => {
+    if (!pricePreview?.changed?.length) return toast.error("Analyze a new list first; there are no changes to apply.");
+    setPriceBusy(true);
+    try {
+      await requireAdminAccess();
+      const batchChanges = pricePreview.changed.map(item => ({ id: item.id, title: item.title, brand: item.brand, previousPrice: item.previousPrice, newPrice: item.cashPrice, changeType: item.changeType }));
+      await Promise.all(pricePreview.changed.map(item => setDoc(doc(db, "electronics_cash_phones", item.id), { ...item, imageUrl: item.imageUrl || "", updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || "admin" }, { merge: true })));
+      await addDoc(collection(db, "electronics_price_changes"), { source: "AI Interactions price-list comparison", changedCount: batchChanges.length, importedCount: pricePreview.incoming.length, changes: batchChanges, createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "admin" });
+      await refreshPhonePricing();
+      setPricePreview(null);
+      toast.success(`Applied ${batchChanges.length} phone price updates. Customers see them after their next refresh.`);
+    } catch (error) {
+      toast.error(error.message || "Could not apply phone price updates.");
+    } finally {
+      setPriceBusy(false);
+    }
+  };
 
   const refreshData = async () => {
     setLoading(true);
@@ -303,6 +372,7 @@ export default function CommandCenter() {
       setReferralEarnings(allReferralEarnings);
       setProducts(allProducts);
       setRequestGroups(requestResults);
+      await refreshPhonePricing();
 
       const moduleStats = {};
       MODULES.forEach(module => {
@@ -319,7 +389,7 @@ export default function CommandCenter() {
       setSystemHealth("🟢 All Systems Operational");
       setLastRefresh(new Date());
       setLastRefreshBy(auth.currentUser?.email || auth.currentUser?.uid || "Administrator");
-      void writeAdminLog("read_command_center", "command-center", { collections: ["orders", "transactions", "payments", "users", "chats", "activities", "adminLogs", "reports", "downloads", "services", "invoices", "notifications", "supportTickets", "purchase_requests", "referrals", "referralEarnings", "products"], recordCounts: { orders: allOrders.length, transactions: paymentLedger.length, payments: allPayments.length, users: allUsers.length, chats: allChats.length } });
+      void writeAdminLog("read_command_center", "command-center", { collections: ["orders", "transactions", "payments", "users", "chats", "activities", "adminLogs", "reports", "downloads", "services", "invoices", "notifications", "supportTickets", "purchase_requests", "referrals", "referralEarnings", "products", "electronics_cash_phones", "electronics_price_changes"], recordCounts: { orders: allOrders.length, transactions: paymentLedger.length, payments: allPayments.length, users: allUsers.length, chats: allChats.length, cashPhones: cashPhones.length } });
       toast.success("All Command Center data recalculated.");
     } catch (error) {
       console.error("Refresh error:", error);
@@ -678,6 +748,20 @@ export default function CommandCenter() {
                   <div className="cmd-stat-box"><div className="cmd-stat-value" style={{ color: "#fca5a5" }}>{moduleStats.failedOrders || 0}</div><div className="cmd-stat-label">Failed</div></div>
                 </div>
               </section>
+            )}
+
+            {activeView === "ai-interactions" && (
+              <>
+                <section className="cmd-card" style={{ borderColor: "rgba(129,140,248,.55)" }}>
+                  <div className="cmd-card-header"><div><h2 className="cmd-card-title">🤖 AI Interactions — Cash phone prices</h2><p className="cmd-card-subtitle">Paste or upload a new stock list. WeberTech compares it with the current customer catalog and shows every change before anything is published.</p></div><button style={commonButton} onClick={refreshPhonePricing}>🔄 Refresh phone prices</button></div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}><label className="cmd-btn" style={{ cursor: "pointer" }}>📄 Upload price list<input type="file" accept=".txt,.csv,.tsv" hidden onChange={async event => { const file = event.target.files?.[0]; if (file) setPriceListText(await file.text()); event.target.value = ""; }} /></label><span style={{ color: "rgba(255,255,255,.55)", fontSize: 12, alignSelf: "center" }}>{cashPhones.length} managed phones · {priceChanges.length} import records</span></div>
+                  <textarea className="cmd-textarea" value={priceListText} onChange={event => setPriceListText(event.target.value)} placeholder={'Paste the latest list, for example:\n*TECNO*\nPop 20 (64+4) @ 14200\nSpark 50 (128+4) @ 18100'} style={{ minHeight: 180, width: "100%", boxSizing: "border-box" }} />
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}><button className="cmd-btn" onClick={analyzePriceList} disabled={!priceListText.trim()}>🔎 Analyze & compare</button>{pricePreview && <button className="cmd-btn" onClick={applyPriceList} disabled={priceBusy} style={{ background: "#16a34a" }}>{priceBusy ? "⟳ Applying..." : `✅ Apply ${pricePreview.changed.length} changes`}</button>}</div>
+                  <p style={{ color: "rgba(255,255,255,.52)", fontSize: 11, lineHeight: 1.5, marginBottom: 0 }}>The comparison is deterministic: only rows containing an explicit numeric price are considered. Blank or unavailable prices are not invented or published. Applying writes to <code>electronics_cash_phones</code>; customers see updates after their next refresh.</p>
+                </section>
+                {pricePreview && <section className="cmd-card"><div className="cmd-card-header"><div><h3 className="cmd-card-title">Comparison preview</h3><p className="cmd-card-subtitle">{pricePreview.incoming.length} parsed rows · {pricePreview.changed.length} new or changed · unchanged rows will not be rewritten.</p></div></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Brand</th><th>Phone</th><th>Current</th><th>New cash price</th><th>Result</th></tr></thead><tbody>{pricePreview.changes.slice(0, 300).map(item => <tr key={`${item.brand}-${item.title}`}><td>{item.brand}</td><td>{item.title}</td><td>{item.previousPrice ? money(item.previousPrice) : "Not listed"}</td><td>{money(item.cashPrice)}</td><td><span className={`cmd-badge cmd-badge-${item.changeType === "unchanged" ? "paid" : "pending"}`}>{item.changeType}</span></td></tr>)}</tbody></table></div></section>}
+                <section className="cmd-card"><div className="cmd-card-header"><div><h3 className="cmd-card-title">Price-change history</h3><p className="cmd-card-subtitle">Every applied import is retained for admin review.</p></div></div><div className="cmd-table-wrap"><table className="cmd-table"><thead><tr><th>Imported</th><th>Rows</th><th>Changes</th><th>Source</th></tr></thead><tbody>{priceChanges.slice(0, 30).map(item => <tr key={item.id}><td>{formatDate(item.createdAt)}</td><td>{item.importedCount || 0}</td><td>{item.changedCount || 0}</td><td>{item.source || "Price list"}</td></tr>)}{!priceChanges.length && <tr><td colSpan="4"><div className="cmd-empty">No applied phone-price imports yet.</div></td></tr>}</tbody></table></div></section>
+              </>
             )}
 
             {activeView === "overview" && (
